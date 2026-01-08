@@ -4,8 +4,7 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars, Sky, Environment, Float, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { GameState, Enemy, Tower, Projectile, Effect, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType } from './types';
-import { GRID_SIZE, PATH_WAYPOINTS, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL } from './constants';
-import { getWaveIntel } from './geminiService';
+import { GRID_SIZE, PATH_WAYPOINTS, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL, TACTICAL_INTEL_POOL } from './constants';
 import HUD from './components/HUD';
 import Scene from './components/Scene';
 
@@ -277,14 +276,25 @@ const App: React.FC = () => {
         return;
     }
 
-    await performWaveStart(nextWaveNum);
+    performWaveStart(nextWaveNum);
   };
 
-  const performWaveStart = async (waveNum: number) => {
-    const intel = await getWaveIntel(waveNum);
-    setGameState(prev => ({ ...prev, wave: waveNum, waveStatus: 'SPAWNING', waveIntel: intel }));
+  const performWaveStart = (waveNum: number) => {
+    // 1. Instantly pick a message from the local pool
+    const randomMsg = TACTICAL_INTEL_POOL[Math.floor(Math.random() * TACTICAL_INTEL_POOL.length)];
+
+    // 2. Immediately update state to start the wave visually
+    setGameState(prev => ({ 
+      ...prev, 
+      wave: waveNum, 
+      waveStatus: 'SPAWNING', 
+      waveIntel: randomMsg 
+    }));
+
+    // 3. Start enemy spawning sequence immediately
     const spawnCount = 5 + waveNum * 2;
     const baseInterval = 1000 - Math.min(waveNum * 50, 600);
+    
     for (let i = 0; i < spawnCount; i++) {
       setTimeout(() => {
         if (gameStateRef.current.isGameOver) return;
