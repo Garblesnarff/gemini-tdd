@@ -58,34 +58,47 @@ export enum TargetPriority {
   WEAKEST = 'WEAKEST'
 }
 
+export enum AugmentType {
+  STAT_BUFF = 'STAT_BUFF',
+  ECONOMY = 'ECONOMY',
+  ON_HIT = 'ON_HIT'
+}
+
+export interface Augment {
+  id: string;
+  name: string;
+  description: string;
+  rarity: 'COMMON' | 'RARE' | 'LEGENDARY';
+  type: AugmentType;
+  effect: {
+    stat?: 'damage' | 'range' | 'fireRate';
+    value: number;
+    target?: TowerType | 'ALL';
+    techTarget?: TechPath; // New field for path-specific buffs
+    special?: 'INTEREST' | 'SPLASH_DAMAGE';
+  };
+}
+
 export interface Tower {
   id: string;
   type: TowerType;
   position: Vector3Tuple;
-  // Current effective stats (recalculated every frame)
   range: number;
   fireRate: number; 
   damage: number;
-  
-  // Base stats (persisted from upgrades)
   baseRange: number;
   baseFireRate: number;
   baseDamage: number;
-
-  cooldown: number; // ms remaining until next shot
-  lastShotTime: number; // timestamp for visual effects only
+  cooldown: number; 
+  lastShotTime: number; 
   level: number;
   techPath: TechPath;
   totalInvested: number;
-  
-  // Ability State
   passiveType: PassiveType;
   activeType: ActiveAbilityType;
-  abilityCooldown: number;     // Remaining cooldown
-  abilityMaxCooldown: number;  // Total cooldown time
-  abilityDuration: number;     // Remaining active duration (for Overclock etc)
-  
-  // Strategy
+  abilityCooldown: number;     
+  abilityMaxCooldown: number;  
+  abilityDuration: number;     
   targetPriority: TargetPriority;
 }
 
@@ -96,6 +109,7 @@ export interface Projectile {
   damage: number;
   speed: number;
   color: string;
+  sourceType: TowerType;
 }
 
 export interface Effect {
@@ -104,8 +118,8 @@ export interface Effect {
   position: Vector3Tuple;
   color: string;
   scale: number;
-  lifetime: number; // 0 to 1
-  maxLifetime: number; // frames
+  lifetime: number; 
+  maxLifetime: number; 
 }
 
 export interface GameState {
@@ -116,9 +130,12 @@ export interface GameState {
   towers: Tower[];
   projectiles: Projectile[];
   effects: Effect[];
-  gameSpeed: number; // 0 (pause), 1 (normal), 2 (fast)
+  gameSpeed: number; 
   isGameOver: boolean;
   waveStatus: 'IDLE' | 'SPAWNING' | 'CLEARING';
   waveIntel?: string;
   selectedTowerId: string | null;
+  activeAugments: Augment[];
+  augmentChoices: Augment[];
+  isChoosingAugment: boolean;
 }
