@@ -1,0 +1,5 @@
+{
+  "name": "Gemini Strike: Three.js Tower Defense",
+  "description": "A high-fidelity 3D tower defense game built with React, Three.js, and Gemini API for dynamic wave intelligence and level progression flavor text.",
+  "requestFramePermissions": []
+}
