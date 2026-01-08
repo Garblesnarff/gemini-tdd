@@ -54,7 +54,17 @@ const AbilityHotbar: React.FC<{
 
             s.count++;
             if (t.abilityCooldown <= 0) {
-                s.ready++;
+                // Check if the tower has at least one target in range to be considered "ready to trigger"
+                const hasTarget = gameState.enemies.some(enemy => {
+                    const dist = Math.sqrt(
+                        Math.pow(enemy.position.x - t.position.x, 2) +
+                        Math.pow(enemy.position.z - t.position.z, 2)
+                    );
+                    return dist <= t.range;
+                });
+                if (hasTarget) {
+                    s.ready++;
+                }
             } else {
                 // Track the smallest cooldown among towers of this type to show "next ready"
                 if (s.currentCd === 0 || t.abilityCooldown < s.currentCd) {
@@ -65,7 +75,7 @@ const AbilityHotbar: React.FC<{
         });
 
         return stats;
-    }, [gameState.towers]);
+    }, [gameState.towers, gameState.enemies]);
 
     return (
         <div className="absolute left-6 top-1/2 -translate-y-1/2 flex flex-col gap-3 pointer-events-auto">

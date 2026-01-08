@@ -375,9 +375,21 @@ const App: React.FC = () => {
   };
 
   const handleBatchTriggerAbility = (activeType: ActiveAbilityType) => {
-      const towers = gameStateRef.current.towers.filter(t => t.activeType === activeType && t.abilityCooldown <= 0);
-      if (towers.length === 0) return;
-      executeAbilityOnTowers(towers.map(t => t.id));
+      const currentGameState = gameStateRef.current;
+      const towersToTrigger = currentGameState.towers.filter(t => {
+          if (t.activeType !== activeType || t.abilityCooldown > 0) return false;
+          // Only trigger if at least one enemy is within the tower's range
+          return currentGameState.enemies.some(enemy => {
+              const dist = Math.sqrt(
+                  Math.pow(enemy.position.x - t.position.x, 2) +
+                  Math.pow(enemy.position.z - t.position.z, 2)
+              );
+              return dist <= t.range;
+          });
+      });
+
+      if (towersToTrigger.length === 0) return;
+      executeAbilityOnTowers(towersToTrigger.map(t => t.id));
   };
 
   // Keyboard Listeners
