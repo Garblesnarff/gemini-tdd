@@ -11,6 +11,7 @@ interface SceneProps {
   onPlaceTower: (pos: Vector3Tuple) => void;
   onSelectTower: (id: string | null) => void;
   selectedTowerType: TowerType;
+  pendingPlacement: Vector3Tuple | null;
 }
 
 // --- VISUAL ASSETS ---
@@ -403,8 +404,12 @@ const EffectsRenderer: React.FC<{ effects: Effect[] }> = ({ effects }) => {
     );
 };
 
-const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, selectedTowerType }) => {
+const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, selectedTowerType, pendingPlacement }) => {
   const [hoveredPos, setHoveredPos] = useState<Vector3Tuple | null>(null);
+
+  // If we have a pending placement, force the ghost to be there
+  const ghostPos = pendingPlacement || hoveredPos;
+  const isPending = !!pendingPlacement;
 
   return (
     <>
@@ -510,24 +515,35 @@ const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, s
       <EffectsRenderer effects={gameState.effects} />
 
       {/* Ghost Tower */}
-      {hoveredPos && !gameState.selectedTowerId && !gameState.isGameOver && (
-        <group position={[hoveredPos.x, 0, hoveredPos.z]}>
+      {ghostPos && !gameState.selectedTowerId && !gameState.isGameOver && (
+        <group position={[ghostPos.x, 0, ghostPos.z]}>
+          {/* Visual indicator that it's "pending" - maybe pulse or different opacity */}
           <mesh position={[0, 0.5, 0]}>
             <boxGeometry args={[0.8, 1, 0.8]} />
             <meshStandardMaterial 
-              color={TOWER_STATS[selectedTowerType].color} 
+              color={isPending ? "#22c55e" : TOWER_STATS[selectedTowerType].color} 
               transparent 
-              opacity={0.3} 
+              opacity={isPending ? 0.7 : 0.3} 
+              emissive={isPending ? "#22c55e" : "#000000"}
+              emissiveIntensity={isPending ? 0.5 : 0}
             />
           </mesh>
           <mesh position={[0, 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
             <ringGeometry args={[TOWER_STATS[selectedTowerType].range - 0.1, TOWER_STATS[selectedTowerType].range, 32]} />
-            <meshBasicMaterial color={TOWER_STATS[selectedTowerType].color} transparent opacity={0.5} />
+            <meshBasicMaterial color={isPending ? "#22c55e" : TOWER_STATS[selectedTowerType].color} transparent opacity={0.5} />
           </mesh>
+          {isPending && (
+             <Html position={[0, 1.5, 0]} center>
+                <div className="bg-black/80 text-white text-[10px] px-2 py-1 rounded border border-green-500 whitespace-nowrap">
+                   PENDING DEPLOYMENT
+                </div>
+             </Html>
+          )}
         </group>
       )}
     </>
   );
 };
+import { Html } from '@react-three/drei';
 
 export default Scene;

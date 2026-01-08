@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars, Sky, Environment, Float, Text } from '@react-three/drei';
 import * as THREE from 'three';
-import { GameState, Enemy, Tower, Projectile, Effect, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType } from './types';
+import { GameState, Enemy, Tower, Projectile, Effect, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority } from './types';
 import { GRID_SIZE, PATH_WAYPOINTS, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG } from './constants';
 import { getWaveIntel } from './geminiService';
 import HUD from './components/HUD';
@@ -28,6 +28,8 @@ const App: React.FC = () => {
   });
 
   const [selectedTowerType, setSelectedTowerType] = useState<TowerType>(TowerType.BASIC);
+  const [pendingPlacement, setPendingPlacement] = useState<Vector3Tuple | null>(null);
+  
   const gameStateRef = useRef(gameState);
 
   useEffect(() => {
@@ -53,7 +55,6 @@ const App: React.FC = () => {
         let nextStatus = prev.waveStatus;
 
         // --- STEP 1: CALCULATE TOWER STATS (PASSIVES & ACTIVES) ---
-        // First, reset all towers to base stats
         nextTowers.forEach(t => {
             t.damage = t.baseDamage;
             t.fireRate = t.baseFireRate;
@@ -61,7 +62,6 @@ const App: React.FC = () => {
         });
 
         // Apply Passive Auras
-        // We use a nested loop here. For optimization in larger games, use a spatial grid, but for <50 towers O(N^2) is fine.
         nextTowers.forEach(source => {
             if (source.passiveType !== PassiveType.NONE) {
                 // @ts-ignore
@@ -70,7 +70,7 @@ const App: React.FC = () => {
 
                 if (source.passiveType === PassiveType.DAMAGE_AURA || source.passiveType === PassiveType.RATE_AURA) {
                     nextTowers.forEach(target => {
-                        if (source.id === target.id) return; // Don't buff self with aura
+                        if (source.id === target.id) return;
                         const dist = Math.sqrt(Math.pow(source.position.x - target.position.x, 2) + Math.pow(source.position.z - target.position.z, 2));
                         
                         if (dist <= config.range) {
@@ -84,7 +84,6 @@ const App: React.FC = () => {
 
         // Apply Active Self-Buffs (Overclock)
         nextTowers.forEach(t => {
-            // Update cooldowns
             if (t.abilityCooldown > 0) t.abilityCooldown = Math.max(0, t.abilityCooldown - tickDelta);
             if (t.abilityDuration > 0) t.abilityDuration = Math.max(0, t.abilityDuration - tickDelta);
 
@@ -99,15 +98,12 @@ const App: React.FC = () => {
         for (let i = nextEnemies.length - 1; i >= 0; i--) {
           const enemy = nextEnemies[i];
           
-          // Handle Freeze/Slow
           let speedMultiplier = 1;
           
-          // Check for Freeze Timer (Active Ability)
           if (enemy.freezeTimer && enemy.freezeTimer > 0) {
               enemy.freezeTimer -= tickDelta;
-              speedMultiplier = 0; // Frozen solid
+              speedMultiplier = 0;
           } else {
-             // Check for Slow Auras (Passive)
              nextTowers.forEach(t => {
                  if (t.passiveType === PassiveType.SLOW_AURA) {
                      const dist = Math.sqrt(Math.pow(t.position.x - enemy.position.x, 2) + Math.pow(t.position.z - enemy.position.z, 2));
@@ -119,7 +115,7 @@ const App: React.FC = () => {
              });
           }
 
-          if (speedMultiplier === 0) continue; // Skip movement if frozen
+          if (speedMultiplier === 0) continue;
 
           const currentWaypoint = PATH_WAYPOINTS[enemy.pathIndex];
           const nextWaypoint = PATH_WAYPOINTS[enemy.pathIndex + 1];
@@ -155,33 +151,40 @@ const App: React.FC = () => {
 
           if (tower.cooldown > 0) return;
 
-          // Find closest enemy in range
-          let closestEnemy: Enemy | null = null;
-          let minDistance = tower.range; // Use effective range
-
-          nextEnemies.forEach(enemy => {
-            const dist = Math.sqrt(
+          // Target Selection Logic
+          let candidates = nextEnemies.filter(enemy => {
+             const dist = Math.sqrt(
               Math.pow(enemy.position.x - tower.position.x, 2) +
               Math.pow(enemy.position.z - tower.position.z, 2)
             );
-            if (dist < minDistance) {
-              minDistance = dist;
-              closestEnemy = enemy;
-            }
+            return dist <= tower.range;
           });
 
-          if (closestEnemy) {
-            tower.cooldown = 1000 / tower.fireRate; // Use effective fireRate
-            tower.lastShotTime = now; 
-            
-            nextProjectiles.push({
-              id: Math.random().toString(),
-              position: { ...tower.position, y: 0.8 },
-              targetId: closestEnemy.id,
-              damage: tower.damage, // Use effective damage
-              speed: 0.5,
-              color: TOWER_STATS[tower.type].color
-            });
+          if (candidates.length > 0) {
+              // Sort based on Priority
+              if (tower.targetPriority === TargetPriority.FIRST) {
+                  candidates.sort((a, b) => {
+                      if (a.pathIndex !== b.pathIndex) return b.pathIndex - a.pathIndex;
+                      return b.progress - a.progress;
+                  });
+              } else if (tower.targetPriority === TargetPriority.STRONGEST) {
+                  candidates.sort((a, b) => b.health - a.health);
+              } else if (tower.targetPriority === TargetPriority.WEAKEST) {
+                  candidates.sort((a, b) => a.health - b.health);
+              }
+
+              const target = candidates[0];
+              tower.cooldown = 1000 / tower.fireRate;
+              tower.lastShotTime = now; 
+              
+              nextProjectiles.push({
+                id: Math.random().toString(),
+                position: { ...tower.position, y: 0.8 },
+                targetId: target.id,
+                damage: tower.damage,
+                speed: 0.5,
+                color: TOWER_STATS[tower.type].color
+              });
           }
         });
 
@@ -278,6 +281,7 @@ const App: React.FC = () => {
     if (gameState.waveStatus !== 'IDLE') return;
 
     setGameState(prev => ({ ...prev, selectedTowerId: null }));
+    setPendingPlacement(null);
 
     const nextWave = gameState.wave + 1;
     const intel = await getWaveIntel(nextWave);
@@ -330,7 +334,7 @@ const App: React.FC = () => {
           if (towerIndex === -1) return prev;
           
           const tower = prev.towers[towerIndex];
-          if (tower.abilityCooldown > 0) return prev; // Still on cooldown
+          if (tower.abilityCooldown > 0) return prev;
 
           const config = ABILITY_CONFIG[tower.activeType];
           // @ts-ignore
@@ -341,13 +345,10 @@ const App: React.FC = () => {
           const newEnemies = [...prev.enemies];
           let newGold = prev.gold;
 
-          // Start Cooldown
           // @ts-ignore
           newTowers[towerIndex] = { ...tower, abilityCooldown: config.cooldown };
 
-          // Handle Instant Effects (Nuke / Freeze)
           if (tower.activeType === ActiveAbilityType.NUKE) {
-              // Visual
               newEffects.push({
                   id: Math.random().toString(),
                   type: 'NOVA',
@@ -359,7 +360,6 @@ const App: React.FC = () => {
                   maxLifetime: 30
               });
 
-              // Logic
               newEnemies.forEach((e, idx) => {
                   const dist = Math.sqrt(Math.pow(e.position.x - tower.position.x, 2) + Math.pow(e.position.z - tower.position.z, 2));
                   // @ts-ignore
@@ -369,11 +369,6 @@ const App: React.FC = () => {
                       if (e.health <= 0) {
                           const stats = ENEMY_STATS[e.type];
                           newGold += stats.goldReward;
-                          // Mark for removal (we do this by filtering later or ensuring loop handles it, but simpler to just filter here for safety or let main loop clean up)
-                          // Actually, main loop handles projectile deaths but not direct damage deaths gracefully without a flag or immediate removal.
-                          // Let's just set health to 0 and let loop logic or a quick cleanup handle it? 
-                          // The main loop processes projectiles then checks status. It doesn't check health < 0 randomly.
-                          // So we must remove dead enemies here.
                       }
                   }
               });
@@ -402,12 +397,10 @@ const App: React.FC = () => {
           }
 
           if (tower.activeType === ActiveAbilityType.OVERCLOCK) {
-              // Set duration
               // @ts-ignore
               newTowers[towerIndex].abilityDuration = config.duration;
           }
 
-          // Clean dead enemies from NUKE
           const survivingEnemies = newEnemies.filter(e => e.health > 0);
 
           return {
@@ -420,65 +413,82 @@ const App: React.FC = () => {
       });
   };
 
-  const handlePlaceTower = (pos: Vector3Tuple) => {
-    if (gameState.isGameOver || gameState.gameSpeed === 0) return;
-    
-    if (gameState.selectedTowerId) {
-        setGameState(prev => ({ ...prev, selectedTowerId: null }));
-        return;
-    }
-
-    const stats = TOWER_STATS[selectedTowerType];
-    if (gameState.gold < stats.cost) return;
-
-    const exists = gameState.towers.some(t => 
-      Math.abs(t.position.x - pos.x) < 0.5 && 
-      Math.abs(t.position.z - pos.z) < 0.5
-    );
-    if (exists) return;
-
-    const onPath = PATH_WAYPOINTS.some((wp, idx) => {
-      if (idx === PATH_WAYPOINTS.length - 1) return false;
-      const next = PATH_WAYPOINTS[idx + 1];
-      const minX = Math.min(wp.x, next.x) - 0.8;
-      const maxX = Math.max(wp.x, next.x) + 0.8;
-      const minZ = Math.min(wp.z, next.z) - 0.8;
-      const maxZ = Math.max(wp.z, next.z) + 0.8;
-      return pos.x >= minX && pos.x <= maxX && pos.z >= minZ && pos.z <= maxZ;
-    });
-    if (onPath) return;
-
-    const newTower: Tower = {
-      id: Math.random().toString(),
-      type: selectedTowerType,
-      position: { ...pos, y: 0.5 },
-      // Effective Stats (initially base)
-      range: stats.range,
-      fireRate: stats.fireRate,
-      damage: stats.damage,
-      // Base Stats
-      baseRange: stats.range,
-      baseFireRate: stats.fireRate,
-      baseDamage: stats.damage,
+  const handleGridClick = (pos: Vector3Tuple) => {
+      if (gameState.isGameOver || gameState.gameSpeed === 0) return;
       
-      cooldown: 0,
-      lastShotTime: 0,
-      level: 1,
-      techPath: TechPath.NONE,
-      totalInvested: stats.cost,
+      // If we select a spot while another tower is selected, deselect tower
+      if (gameState.selectedTowerId) {
+          setGameState(prev => ({ ...prev, selectedTowerId: null }));
+      }
       
-      passiveType: PassiveType.NONE,
-      activeType: ActiveAbilityType.NONE,
-      abilityCooldown: 0,
-      abilityMaxCooldown: 0,
-      abilityDuration: 0
-    };
+      // Logic to place ghost (Pending)
+      const stats = TOWER_STATS[selectedTowerType];
+      if (gameState.gold < stats.cost) return;
 
-    setGameState(prev => ({
-      ...prev,
-      gold: prev.gold - stats.cost,
-      towers: [...prev.towers, newTower]
-    }));
+      const exists = gameState.towers.some(t => 
+        Math.abs(t.position.x - pos.x) < 0.5 && 
+        Math.abs(t.position.z - pos.z) < 0.5
+      );
+      if (exists) return;
+
+      const onPath = PATH_WAYPOINTS.some((wp, idx) => {
+        if (idx === PATH_WAYPOINTS.length - 1) return false;
+        const next = PATH_WAYPOINTS[idx + 1];
+        const minX = Math.min(wp.x, next.x) - 0.8;
+        const maxX = Math.max(wp.x, next.x) + 0.8;
+        const minZ = Math.min(wp.z, next.z) - 0.8;
+        const maxZ = Math.max(wp.z, next.z) + 0.8;
+        return pos.x >= minX && pos.x <= maxX && pos.z >= minZ && pos.z <= maxZ;
+      });
+      if (onPath) return;
+      
+      // STAGE IT
+      setPendingPlacement(pos);
+  };
+
+  const handleConfirmPlacement = () => {
+      if (!pendingPlacement) return;
+      
+      const stats = TOWER_STATS[selectedTowerType];
+      // Double check cost
+      if (gameState.gold < stats.cost) {
+          setPendingPlacement(null);
+          return;
+      }
+
+      const newTower: Tower = {
+        id: Math.random().toString(),
+        type: selectedTowerType,
+        position: { ...pendingPlacement, y: 0.5 },
+        range: stats.range,
+        fireRate: stats.fireRate,
+        damage: stats.damage,
+        baseRange: stats.range,
+        baseFireRate: stats.fireRate,
+        baseDamage: stats.damage,
+        cooldown: 0,
+        lastShotTime: 0,
+        level: 1,
+        techPath: TechPath.NONE,
+        totalInvested: stats.cost,
+        passiveType: PassiveType.NONE,
+        activeType: ActiveAbilityType.NONE,
+        abilityCooldown: 0,
+        abilityMaxCooldown: 0,
+        abilityDuration: 0,
+        targetPriority: TargetPriority.FIRST
+      };
+
+      setGameState(prev => ({
+        ...prev,
+        gold: prev.gold - stats.cost,
+        towers: [...prev.towers, newTower]
+      }));
+      setPendingPlacement(null);
+  };
+
+  const handleCancelPlacement = () => {
+      setPendingPlacement(null);
   };
 
   const handleSelectTower = (towerId: string | null) => {
@@ -486,6 +496,7 @@ const App: React.FC = () => {
       ...prev,
       selectedTowerId: towerId
     }));
+    setPendingPlacement(null); // Clear placement if selecting a tower
   };
 
   const handleUpgradeTower = (towerId: string, path: TechPath) => {
@@ -508,16 +519,13 @@ const App: React.FC = () => {
         // @ts-ignore
         const modifiers = UPGRADE_CONFIG.paths[targetPath][nextLevel];
         
-        // Calculate new BASE stats
         const newBaseDamage = baseStats.damage * modifiers.damage;
         const newBaseFireRate = baseStats.fireRate * modifiers.fireRate;
         const newBaseRange = baseStats.range * modifiers.range;
 
-        // Determine Abilities
         const newPassive = modifiers.passive || tower.passiveType;
         const newActive = modifiers.active || tower.activeType;
         
-        // Get Max Cooldown if active
         let maxCd = 0;
         if (newActive !== ActiveAbilityType.NONE) {
             // @ts-ignore
@@ -528,15 +536,12 @@ const App: React.FC = () => {
             ...tower,
             level: nextLevel,
             techPath: targetPath,
-            // Update Base
             baseDamage: newBaseDamage,
             baseFireRate: newBaseFireRate,
             baseRange: newBaseRange,
-            // Reset Current (will be recalculated in loop)
             damage: newBaseDamage,
             fireRate: newBaseFireRate,
             range: newBaseRange,
-            
             totalInvested: tower.totalInvested + cost,
             passiveType: newPassive,
             activeType: newActive,
@@ -553,6 +558,15 @@ const App: React.FC = () => {
             towers: newTowers
         };
     });
+  };
+  
+  const handleUpdatePriority = (towerId: string, priority: TargetPriority) => {
+      setGameState(prev => {
+          const newTowers = prev.towers.map(t => 
+             t.id === towerId ? { ...t, targetPriority: priority } : t
+          );
+          return { ...prev, towers: newTowers };
+      });
   };
 
   const handleSellTower = (towerId: string) => {
@@ -590,6 +604,7 @@ const App: React.FC = () => {
       waveIntel: 'Ready for deployment, Commander.',
       selectedTowerId: null
     });
+    setPendingPlacement(null);
   };
 
   return (
@@ -597,9 +612,10 @@ const App: React.FC = () => {
       <Canvas shadows camera={{ position: [10, 15, 10], fov: 45 }}>
         <Scene 
           gameState={gameState} 
-          onPlaceTower={handlePlaceTower}
+          onPlaceTower={handleGridClick}
           onSelectTower={handleSelectTower}
           selectedTowerType={selectedTowerType}
+          pendingPlacement={pendingPlacement}
         />
         <OrbitControls makeDefault maxPolarAngle={Math.PI / 2.2} minDistance={5} maxDistance={30} />
       </Canvas>
@@ -607,7 +623,7 @@ const App: React.FC = () => {
       <HUD 
         gameState={gameState} 
         onStartWave={startNextWave} 
-        onSelectTower={setSelectedTowerType}
+        onSelectTower={(type) => { setSelectedTowerType(type); setPendingPlacement(null); }}
         selectedTowerType={selectedTowerType}
         onReset={resetGame}
         onUpgradeTower={handleUpgradeTower}
@@ -615,6 +631,10 @@ const App: React.FC = () => {
         onSellTower={handleSellTower}
         onSetSpeed={setGameSpeed}
         onTriggerAbility={handleTriggerAbility}
+        pendingPlacement={pendingPlacement}
+        onConfirmPlacement={handleConfirmPlacement}
+        onCancelPlacement={handleCancelPlacement}
+        onUpdatePriority={handleUpdatePriority}
       />
 
       {gameState.isGameOver && (

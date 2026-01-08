@@ -52,6 +52,12 @@ export enum ActiveAbilityType {
   FREEZE = 'FREEZE'        // Void Lvl 3
 }
 
+export enum TargetPriority {
+  FIRST = 'FIRST',
+  STRONGEST = 'STRONGEST',
+  WEAKEST = 'WEAKEST'
+}
+
 export interface Tower {
   id: string;
   type: TowerType;
@@ -78,6 +84,9 @@ export interface Tower {
   abilityCooldown: number;     // Remaining cooldown
   abilityMaxCooldown: number;  // Total cooldown time
   abilityDuration: number;     // Remaining active duration (for Overclock etc)
+  
+  // Strategy
+  targetPriority: TargetPriority;
 }
 
 export interface Projectile {

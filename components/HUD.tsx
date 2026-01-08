@@ -1,8 +1,8 @@
 
 import React from 'react';
-import { GameState, TowerType, TechPath, ActiveAbilityType } from '../types';
+import { GameState, TowerType, TechPath, ActiveAbilityType, TargetPriority, Vector3Tuple } from '../types';
 import { TOWER_STATS, TECH_PATH_INFO, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG } from '../constants';
-import { Heart, Coins, Swords, Shield, Zap, Info, ChevronRight, RefreshCcw, Radio, Eye, X, ArrowUpCircle, Check, Play, Pause, FastForward, Trash2, Crosshair } from 'lucide-react';
+import { Heart, Coins, Swords, Shield, Zap, Info, ChevronRight, RefreshCcw, Radio, Eye, X, ArrowUpCircle, Check, Play, Pause, FastForward, Trash2, Crosshair, Target } from 'lucide-react';
 
 interface HUDProps {
   gameState: GameState;
@@ -15,6 +15,10 @@ interface HUDProps {
   onSellTower: (towerId: string) => void;
   onSetSpeed: (speed: number) => void;
   onTriggerAbility: (towerId: string) => void;
+  pendingPlacement: Vector3Tuple | null;
+  onConfirmPlacement: () => void;
+  onCancelPlacement: () => void;
+  onUpdatePriority: (towerId: string, priority: TargetPriority) => void;
 }
 
 const HUD: React.FC<HUDProps> = ({ 
@@ -27,7 +31,11 @@ const HUD: React.FC<HUDProps> = ({
   onDeselectTower,
   onSellTower,
   onSetSpeed,
-  onTriggerAbility
+  onTriggerAbility,
+  pendingPlacement,
+  onConfirmPlacement,
+  onCancelPlacement,
+  onUpdatePriority
 }) => {
   const selectedTower = gameState.selectedTowerId 
     ? gameState.towers.find(t => t.id === gameState.selectedTowerId) 
@@ -114,6 +122,31 @@ const HUD: React.FC<HUDProps> = ({
         </div>
       </div>
 
+      {/* CONFIRMATION OVERLAY (When Placement Pending) */}
+      {pendingPlacement && (
+         <div className="absolute bottom-32 left-1/2 -translate-x-1/2 pointer-events-auto animate-in slide-in-from-bottom-4 zoom-in-95 duration-200">
+             <div className="bg-slate-900/90 backdrop-blur-md border border-slate-700 p-4 rounded-2xl shadow-2xl flex items-center gap-4">
+                 <div className="text-white font-bold uppercase tracking-wider text-sm">
+                    Confirm Deployment?
+                 </div>
+                 <div className="flex gap-2">
+                     <button 
+                        onClick={onCancelPlacement}
+                        className="p-2 bg-red-500/20 hover:bg-red-500/40 text-red-400 rounded-lg transition-colors"
+                     >
+                         <X size={24} />
+                     </button>
+                     <button 
+                        onClick={onConfirmPlacement}
+                        className="p-2 bg-green-500 hover:bg-green-400 text-white rounded-lg shadow-lg shadow-green-500/30 transition-all transform hover:scale-105"
+                     >
+                         <Check size={24} strokeWidth={3} />
+                     </button>
+                 </div>
+             </div>
+         </div>
+      )}
+
       {/* Bottom Center: Contextual UI (Shop OR Upgrade) */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto w-full md:w-auto flex justify-center px-4">
         
@@ -167,159 +200,186 @@ const HUD: React.FC<HUDProps> = ({
              </div>
 
              {/* Upgrade Content */}
-             <div className="flex gap-2 justify-center w-full">
+             <div className="flex flex-col md:flex-row gap-4 justify-center w-full">
                 
-                {/* Level 1 -> 2: Tech Path Selection */}
-                {selectedTower.level === 1 && (
-                    <div className="flex flex-col md:flex-row gap-4 w-full">
-                        {[TechPath.MAGMA, TechPath.PLASMA, TechPath.VOID].map(path => {
-                            const info = TECH_PATH_INFO[path];
-                            const cost = UPGRADE_CONFIG.costs[2];
-                            const canAfford = gameState.gold >= cost;
-                            const multipliers = UPGRADE_CONFIG.paths[path][2];
+                {/* Left Column: Upgrades */}
+                <div className="flex-grow flex gap-2">
+                    {/* Level 1 -> 2: Tech Path Selection */}
+                    {selectedTower.level === 1 && (
+                        <div className="flex flex-col md:flex-row gap-4 w-full">
+                            {[TechPath.MAGMA, TechPath.PLASMA, TechPath.VOID].map(path => {
+                                const info = TECH_PATH_INFO[path];
+                                const cost = UPGRADE_CONFIG.costs[2];
+                                const canAfford = gameState.gold >= cost;
+                                const multipliers = UPGRADE_CONFIG.paths[path][2];
 
-                            return (
-                                <div 
-                                  key={path}
-                                  className={`
-                                    flex-1 flex flex-col p-4 rounded-xl border-2 transition-all relative overflow-hidden group
-                                    ${canAfford ? 'border-slate-800 hover:border-blue-500/50 bg-slate-900 hover:bg-slate-800' : 'border-slate-800 bg-slate-900 opacity-60'}
-                                  `}
-                                >
-                                    {/* Header */}
-                                    <div className="flex items-center gap-3 mb-3">
-                                      <div className="p-2 rounded-lg" style={{ backgroundColor: `${info.color}20`, color: info.color }}>
-                                        {info.icon === 'Swords' && <Swords size={20} />}
-                                        {info.icon === 'Zap' && <Zap size={20} />}
-                                        {info.icon === 'Eye' && <Eye size={20} />}
-                                      </div>
-                                      <div>
-                                        <div className="font-bold text-white text-sm uppercase tracking-wider">{info.name}</div>
-                                        <div className="text-[10px] text-slate-400 font-mono">Tech Path</div>
-                                      </div>
-                                    </div>
-
-                                    {/* Description */}
-                                    <p className="text-xs text-slate-400 mb-4 h-8 leading-tight">{info.description}</p>
-
-                                    {/* Abilities List */}
-                                    <div className="space-y-1 mb-4">
-                                      {info.abilities.map((ability, idx) => (
-                                        <div key={idx} className="flex items-center gap-2 text-xs font-medium text-slate-300">
-                                          <Check size={10} className="text-green-500" />
-                                          {ability}
+                                return (
+                                    <div 
+                                    key={path}
+                                    className={`
+                                        flex-1 flex flex-col p-4 rounded-xl border-2 transition-all relative overflow-hidden group
+                                        ${canAfford ? 'border-slate-800 hover:border-blue-500/50 bg-slate-900 hover:bg-slate-800' : 'border-slate-800 bg-slate-900 opacity-60'}
+                                    `}
+                                    >
+                                        {/* Header */}
+                                        <div className="flex items-center gap-3 mb-3">
+                                        <div className="p-2 rounded-lg" style={{ backgroundColor: `${info.color}20`, color: info.color }}>
+                                            {info.icon === 'Swords' && <Swords size={20} />}
+                                            {info.icon === 'Zap' && <Zap size={20} />}
+                                            {info.icon === 'Eye' && <Eye size={20} />}
                                         </div>
-                                      ))}
+                                        <div>
+                                            <div className="font-bold text-white text-sm uppercase tracking-wider">{info.name}</div>
+                                            <div className="text-[10px] text-slate-400 font-mono">Tech Path</div>
+                                        </div>
+                                        </div>
+
+                                        {/* Description */}
+                                        <p className="text-xs text-slate-400 mb-4 h-8 leading-tight">{info.description}</p>
+
+                                        {/* Abilities List */}
+                                        <div className="space-y-1 mb-4">
+                                        {info.abilities.map((ability, idx) => (
+                                            <div key={idx} className="flex items-center gap-2 text-xs font-medium text-slate-300">
+                                            <Check size={10} className="text-green-500" />
+                                            {ability}
+                                            </div>
+                                        ))}
+                                        </div>
+
+                                        <div className="mt-auto pt-2">
+                                        <button
+                                            onClick={() => canAfford && onUpgradeTower(selectedTower.id, path)}
+                                            disabled={!canAfford}
+                                            className={`
+                                                w-full py-3 rounded-lg font-bold text-sm flex items-center justify-center gap-2 transition-all
+                                                ${canAfford 
+                                                    ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg hover:shadow-blue-500/25 active:scale-95' 
+                                                    : 'bg-slate-800 text-slate-500 cursor-not-allowed'}
+                                            `}
+                                        >
+                                            <div className="flex items-center gap-1">
+                                                <Coins size={14} className={canAfford ? 'text-yellow-300' : 'text-slate-500'} /> 
+                                                {cost}
+                                            </div>
+                                            <span>INSTALL UPGRADE</span>
+                                        </button>
+                                        </div>
                                     </div>
-
-                                    <div className="mt-auto pt-2">
-                                      <button
-                                          onClick={() => canAfford && onUpgradeTower(selectedTower.id, path)}
-                                          disabled={!canAfford}
-                                          className={`
-                                              w-full py-3 rounded-lg font-bold text-sm flex items-center justify-center gap-2 transition-all
-                                              ${canAfford 
-                                                ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg hover:shadow-blue-500/25 active:scale-95' 
-                                                : 'bg-slate-800 text-slate-500 cursor-not-allowed'}
-                                          `}
-                                      >
-                                          <div className="flex items-center gap-1">
-                                            <Coins size={14} className={canAfford ? 'text-yellow-300' : 'text-slate-500'} /> 
-                                            {cost}
-                                          </div>
-                                          <span>INSTALL UPGRADE</span>
-                                      </button>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
-
-                {/* Level 2 -> 3+: Linear Upgrade */}
-                {selectedTower.level >= 2 && selectedTower.level < MAX_LEVEL && (
-                    <button
-                        // @ts-ignore
-                        onClick={() => gameState.gold >= UPGRADE_CONFIG.costs[selectedTower.level + 1] && onUpgradeTower(selectedTower.id, selectedTower.techPath)}
-                        className={`
-                            w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all
-                            ${gameState.gold >= UPGRADE_CONFIG.costs[selectedTower.level + 1] 
-                              ? 'border-blue-500 bg-blue-900/20 hover:bg-blue-900/30' 
-                              : 'border-slate-800 bg-slate-900/50 opacity-60 cursor-not-allowed'}
-                        `}
-                    >
-                        <div className="flex items-center gap-4">
-                           <div className="bg-blue-500/20 p-3 rounded-xl">
-                             <ArrowUpCircle size={32} className="text-blue-400" />
-                           </div>
-                           <div className="text-left">
-                              <div className="font-bold text-white text-lg">Initialize System Upgrade</div>
-                              <div className="text-sm text-blue-200">Enhance combat capabilities to Level {selectedTower.level + 1}</div>
-                           </div>
+                                );
+                            })}
                         </div>
-                        <div className="flex flex-col items-end gap-1">
-                          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Upgrade Cost</span>
-                          <div className="flex items-center gap-2 text-yellow-400 font-black text-2xl">
-                             <Coins size={20} /> 
-                             {/* @ts-ignore */}
-                             {UPGRADE_CONFIG.costs[selectedTower.level + 1]}
-                          </div>
-                        </div>
-                    </button>
-                )}
+                    )}
 
-                 {/* Max Level */}
-                 {selectedTower.level >= MAX_LEVEL && (
-                     <div className="w-full flex flex-col gap-3">
-                         {/* Ability Trigger Button (Only if Active Ability Exists) */}
-                         {selectedTower.activeType !== ActiveAbilityType.NONE && (
-                             <button
-                                onClick={() => onTriggerAbility(selectedTower.id)}
-                                disabled={selectedTower.abilityCooldown > 0}
-                                className={`
-                                    w-full p-4 rounded-xl border-2 transition-all flex items-center justify-between group relative overflow-hidden
-                                    ${selectedTower.abilityCooldown > 0 
-                                        ? 'border-slate-800 bg-slate-900 cursor-not-allowed grayscale' 
-                                        : 'border-purple-500 bg-purple-900/30 hover:bg-purple-900/50 cursor-pointer shadow-lg shadow-purple-500/20'}
-                                `}
-                             >
-                                 <div className="flex items-center gap-4 z-10">
-                                     <div className={`p-3 rounded-lg ${selectedTower.abilityCooldown > 0 ? 'bg-slate-800' : 'bg-purple-500 text-white'}`}>
-                                         <Crosshair size={24} className={selectedTower.abilityCooldown > 0 ? 'text-slate-500' : 'animate-pulse'}/>
-                                     </div>
-                                     <div className="text-left">
-                                         <div className="font-bold text-white text-lg flex items-center gap-2">
-                                             ACTIVATE ABILITY
-                                             {/* @ts-ignore */}
-                                             <span className="text-xs font-normal text-purple-300 uppercase tracking-widest bg-purple-900/50 px-2 py-0.5 rounded border border-purple-500/30">
+                    {/* Level 2 -> 3+: Linear Upgrade */}
+                    {selectedTower.level >= 2 && selectedTower.level < MAX_LEVEL && (
+                        <button
+                            // @ts-ignore
+                            onClick={() => gameState.gold >= UPGRADE_CONFIG.costs[selectedTower.level + 1] && onUpgradeTower(selectedTower.id, selectedTower.techPath)}
+                            className={`
+                                w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all
+                                ${gameState.gold >= UPGRADE_CONFIG.costs[selectedTower.level + 1] 
+                                ? 'border-blue-500 bg-blue-900/20 hover:bg-blue-900/30' 
+                                : 'border-slate-800 bg-slate-900/50 opacity-60 cursor-not-allowed'}
+                            `}
+                        >
+                            <div className="flex items-center gap-4">
+                            <div className="bg-blue-500/20 p-3 rounded-xl">
+                                <ArrowUpCircle size={32} className="text-blue-400" />
+                            </div>
+                            <div className="text-left">
+                                <div className="font-bold text-white text-lg">Initialize System Upgrade</div>
+                                <div className="text-sm text-blue-200">Enhance combat capabilities to Level {selectedTower.level + 1}</div>
+                            </div>
+                            </div>
+                            <div className="flex flex-col items-end gap-1">
+                            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Upgrade Cost</span>
+                            <div className="flex items-center gap-2 text-yellow-400 font-black text-2xl">
+                                <Coins size={20} /> 
+                                {/* @ts-ignore */}
+                                {UPGRADE_CONFIG.costs[selectedTower.level + 1]}
+                            </div>
+                            </div>
+                        </button>
+                    )}
+
+                    {/* Max Level / Abilities */}
+                    {selectedTower.level >= MAX_LEVEL && (
+                        <div className="w-full flex flex-col gap-3">
+                            {/* Ability Trigger Button (Only if Active Ability Exists) */}
+                            {selectedTower.activeType !== ActiveAbilityType.NONE && (
+                                <button
+                                    onClick={() => onTriggerAbility(selectedTower.id)}
+                                    disabled={selectedTower.abilityCooldown > 0}
+                                    className={`
+                                        w-full p-4 rounded-xl border-2 transition-all flex items-center justify-between group relative overflow-hidden
+                                        ${selectedTower.abilityCooldown > 0 
+                                            ? 'border-slate-800 bg-slate-900 cursor-not-allowed grayscale' 
+                                            : 'border-purple-500 bg-purple-900/30 hover:bg-purple-900/50 cursor-pointer shadow-lg shadow-purple-500/20'}
+                                    `}
+                                >
+                                    <div className="flex items-center gap-4 z-10">
+                                        <div className={`p-3 rounded-lg ${selectedTower.abilityCooldown > 0 ? 'bg-slate-800' : 'bg-purple-500 text-white'}`}>
+                                            <Crosshair size={24} className={selectedTower.abilityCooldown > 0 ? 'text-slate-500' : 'animate-pulse'}/>
+                                        </div>
+                                        <div className="text-left">
+                                            <div className="font-bold text-white text-lg flex items-center gap-2">
+                                                ACTIVATE ABILITY
                                                 {/* @ts-ignore */}
-                                                {ActiveAbilityType[selectedTower.activeType]}
-                                             </span>
-                                         </div>
-                                         <div className="text-xs text-purple-200">
-                                            {selectedTower.abilityCooldown > 0 
-                                                ? `Recharging System... ${(selectedTower.abilityCooldown / 1000).toFixed(1)}s` 
-                                                : 'Systems Ready. Waiting for Command.'}
-                                         </div>
-                                     </div>
-                                 </div>
+                                                <span className="text-xs font-normal text-purple-300 uppercase tracking-widest bg-purple-900/50 px-2 py-0.5 rounded border border-purple-500/30">
+                                                    {/* @ts-ignore */}
+                                                    {ActiveAbilityType[selectedTower.activeType]}
+                                                </span>
+                                            </div>
+                                            <div className="text-xs text-purple-200">
+                                                {selectedTower.abilityCooldown > 0 
+                                                    ? `Recharging System... ${(selectedTower.abilityCooldown / 1000).toFixed(1)}s` 
+                                                    : 'Systems Ready. Waiting for Command.'}
+                                            </div>
+                                        </div>
+                                    </div>
 
-                                 {/* Cooldown Progress Bar Background */}
-                                 {selectedTower.abilityCooldown > 0 && (
-                                     <div 
-                                        className="absolute inset-0 bg-slate-800 origin-left z-0 opacity-50"
-                                        style={{ transform: `scaleX(${selectedTower.abilityCooldown / selectedTower.abilityMaxCooldown})` }}
-                                     />
-                                 )}
-                             </button>
-                         )}
+                                    {/* Cooldown Progress Bar Background */}
+                                    {selectedTower.abilityCooldown > 0 && (
+                                        <div 
+                                            className="absolute inset-0 bg-slate-800 origin-left z-0 opacity-50"
+                                            style={{ transform: `scaleX(${selectedTower.abilityCooldown / selectedTower.abilityMaxCooldown})` }}
+                                        />
+                                    )}
+                                </button>
+                            )}
 
-                         <div className="w-full text-center p-4 rounded-xl border border-dashed border-slate-700 bg-slate-900/30 text-slate-500 font-mono text-sm uppercase tracking-widest flex items-center justify-center gap-2">
-                             <Shield size={16} />
-                             Maximum Tech Level Reached
-                         </div>
-                     </div>
-                 )}
+                            <div className="w-full text-center p-4 rounded-xl border border-dashed border-slate-700 bg-slate-900/30 text-slate-500 font-mono text-sm uppercase tracking-widest flex items-center justify-center gap-2">
+                                <Shield size={16} />
+                                Maximum Tech Level Reached
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Right Column: Targeting Config */}
+                <div className="flex flex-col gap-2 min-w-[200px]">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-2">
+                        <Target size={12} /> Target Priority
+                    </div>
+                    <div className="flex flex-col gap-2 bg-slate-900 p-2 rounded-xl border border-slate-800">
+                        {[TargetPriority.FIRST, TargetPriority.STRONGEST, TargetPriority.WEAKEST].map(priority => (
+                            <button
+                                key={priority}
+                                onClick={() => onUpdatePriority(selectedTower.id, priority)}
+                                className={`
+                                    px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wide text-left transition-all border
+                                    ${selectedTower.targetPriority === priority 
+                                        ? 'bg-blue-600 border-blue-500 text-white shadow-md' 
+                                        : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700 hover:text-white'}
+                                `}
+                            >
+                                {priority}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
              </div>
            </div>
         ) : (
@@ -331,7 +391,7 @@ const HUD: React.FC<HUDProps> = ({
               onClick={() => onSelectTower(type as TowerType)}
               className={`
                 group relative min-w-[80px] p-3 rounded-xl flex flex-col items-center gap-2 transition-all duration-200
-                ${selectedTowerType === type 
+                ${selectedTowerType === type && !pendingPlacement
                   ? 'bg-slate-800 border-2 border-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.3)] translate-y-[-4px]' 
                   : 'bg-transparent border-2 border-transparent hover:bg-slate-800/50'}
                 ${gameState.gold < stats.cost ? 'opacity-40 grayscale cursor-not-allowed' : 'cursor-pointer'}
@@ -350,7 +410,7 @@ const HUD: React.FC<HUDProps> = ({
               </div>
               
               {/* Tooltip for stats - appears above */}
-              {selectedTowerType === type && (
+              {selectedTowerType === type && !pendingPlacement && (
                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 w-40 bg-slate-900/95 backdrop-blur border border-slate-700 p-3 rounded-xl shadow-xl pointer-events-none animate-in slide-in-from-bottom-2 fade-in duration-200 z-50">
                   <h4 className="font-bold text-blue-400 text-[10px] mb-2 uppercase tracking-wider border-b border-slate-700 pb-1">Unit Stats</h4>
                   <div className="space-y-1.5">
@@ -379,7 +439,7 @@ const HUD: React.FC<HUDProps> = ({
 
       {/* Bottom Right: Action Button */}
       <div className="absolute bottom-4 right-4 md:bottom-6 md:right-6 pointer-events-auto">
-        {gameState.waveStatus === 'IDLE' && !gameState.isGameOver && !selectedTower && (
+        {gameState.waveStatus === 'IDLE' && !gameState.isGameOver && !selectedTower && !pendingPlacement && (
           <button 
             onClick={onStartWave}
             className="group relative overflow-hidden bg-blue-600 hover:bg-blue-500 text-white pl-6 pr-5 py-4 rounded-xl font-bold text-lg shadow-[0_0_30px_rgba(37,99,235,0.4)] flex items-center gap-3 transition-all transform hover:scale-105 active:scale-95"
