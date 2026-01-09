@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Stars, Sky, Environment, Box, Cylinder, Sphere, Float, Sparkles, Icosahedron, Ring } from '@react-three/drei';
+import { Stars, Sky, Environment, Box, Cylinder, Sphere, Float, Sparkles, Icosahedron, Ring, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { GameState, TowerType, Vector3Tuple, EnemyType, Tower, Enemy, TechPath, Effect, PassiveType, ActiveAbilityType } from '../types';
 import { PATH_WAYPOINTS, GRID_SIZE, TOWER_STATS, ENEMY_STATS, TECH_PATH_INFO, ABILITY_CONFIG } from '../constants';
@@ -17,72 +17,88 @@ interface SceneProps {
 // --- VISUAL ASSETS ---
 
 const NukeEffect: React.FC<{ position: Vector3Tuple, color: string, progress: number }> = ({ position, color, progress }) => {
-  // Progress goes 0 -> 1 over lifetime
-  // Explosion expands rapidly then fades
+  // Simple splash for legacy/other effects, though currently Nuke uses OrbitalStrike
   const scale = 1 + progress * 8; 
-  const opacity = 1 - Math.pow(progress, 3); // Fade out curve
+  const opacity = 1 - Math.pow(progress, 3); 
 
   return (
     <group position={[position.x, 0, position.z]}>
-      {/* Shockwave Ring */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.1, 0]}>
         <ringGeometry args={[scale * 0.8, scale, 64]} />
         <meshBasicMaterial color={color} transparent opacity={opacity * 0.8} side={THREE.DoubleSide} />
       </mesh>
-      
-      {/* Core Blast Sphere */}
       <mesh position={[0, scale * 0.3, 0]}>
          <sphereGeometry args={[scale * 0.4, 32, 32]} />
          <meshBasicMaterial color="#fff" emissive={color} emissiveIntensity={2} transparent opacity={opacity} />
       </mesh>
-
-      {/* Rising Mushroom Cloud Particles */}
-      <Sparkles 
-         count={50}
-         scale={scale * 1.5}
-         size={6}
-         speed={0.4}
-         opacity={opacity}
-         color={color}
-         position={[0, scale * 0.5, 0]}
-      />
+      <Sparkles count={50} scale={scale * 1.5} size={6} speed={0.4} opacity={opacity} color={color} position={[0, scale * 0.5, 0]} />
     </group>
   );
 };
 
+const OrbitalStrikeEffect: React.FC<{ position: Vector3Tuple, color: string, progress: number }> = ({ position, color, progress }) => {
+    // 0 -> 0.2: Missile Falling
+    // 0.2 -> 1.0: Explosion
+    const isFalling = progress < 0.2;
+    const explodeProgress = isFalling ? 0 : (progress - 0.2) / 0.8;
+    
+    // Missile Start Y = 20, End Y = 0
+    // falling progress 0->1 based on global progress 0->0.2
+    const fallRatio = progress * 5; 
+    const missileY = 20 - (fallRatio * 20);
+
+    return (
+        <group position={[position.x, 0, position.z]}>
+            {/* Falling Missile */}
+            {isFalling && (
+                <group position={[0, missileY, 0]}>
+                    <mesh rotation={[0, 0, 0]}>
+                        <cylinderGeometry args={[0.2, 0.1, 2]} />
+                        <meshBasicMaterial color="#fff" />
+                    </mesh>
+                    {/* Trail */}
+                    <mesh position={[0, 2, 0]}>
+                         <cylinderGeometry args={[0.05, 0.2, 4, 8, 1, true]} />
+                         <meshBasicMaterial color={color} transparent opacity={0.5} side={THREE.DoubleSide} />
+                    </mesh>
+                </group>
+            )}
+
+            {/* Impact Explosion */}
+            {!isFalling && (
+                <group>
+                    {/* Ground Ring Expanding */}
+                    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
+                        <ringGeometry args={[explodeProgress * 3.5, explodeProgress * 4, 64]} />
+                        <meshBasicMaterial color={color} transparent opacity={1 - explodeProgress} />
+                    </mesh>
+                    
+                    {/* Central Column */}
+                    <mesh position={[0, explodeProgress * 2, 0]}>
+                        <cylinderGeometry args={[2 * (1-explodeProgress), 0.5, 4]} />
+                        <meshBasicMaterial color={color} transparent opacity={(1-explodeProgress) * 0.8} />
+                    </mesh>
+
+                    {/* Debris */}
+                    <Sparkles count={100} scale={5 + explodeProgress * 5} size={10} speed={1} opacity={1 - explodeProgress} color="#fff" />
+                </group>
+            )}
+        </group>
+    );
+};
+
 const FreezeEffect: React.FC<{ position: Vector3Tuple, color: string, progress: number }> = ({ position, color, progress }) => {
-  // Dome expands quickly then stays
-  const entrance = Math.min(progress * 5, 1); // 0 to 1 very fast
-  const fade = progress > 0.8 ? (1 - progress) * 5 : 1; // Fade out at end
+  const entrance = Math.min(progress * 5, 1);
+  const fade = progress > 0.8 ? (1 - progress) * 5 : 1;
   const scale = 5 * entrance; 
 
   return (
     <group position={[position.x, 0, position.z]}>
-      {/* Refractive Ice Dome */}
       <mesh position={[0, 0, 0]}>
         <icosahedronGeometry args={[scale, 2]} />
-        <meshPhysicalMaterial 
-            color={color}
-            roughness={0.1}
-            transmission={0.6} // Glass-like
-            thickness={2} // Refraction volume
-            transparent
-            opacity={0.3 * fade}
-            side={THREE.DoubleSide}
-        />
+        <meshPhysicalMaterial color={color} roughness={0.1} transmission={0.6} thickness={2} transparent opacity={0.3 * fade} side={THREE.DoubleSide} />
       </mesh>
-      
-      {/* Inner Particles Frozen */}
-      <Sparkles 
-        count={100}
-        scale={scale}
-        size={3}
-        speed={0.1} // Slow moving
-        opacity={0.8 * fade}
-        color="#ffffff"
-      />
-      
-      {/* Ground Frost */}
+      <Sparkles count={100} scale={scale} size={3} speed={0.1} opacity={0.8 * fade} color="#ffffff" />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
         <ringGeometry args={[0, scale, 64]} />
         <meshBasicMaterial color={color} transparent opacity={0.2 * fade} />
@@ -111,7 +127,6 @@ const TowerUnit: React.FC<{
     ? TECH_PATH_INFO[tower.techPath].color 
     : stats.color;
 
-  // Calculate dynamic height based on level
   const baseHeight = 0.5;
   const lvl2Height = tower.level >= 2 ? 0.4 : 0;
   const lvl3Height = tower.level >= 3 ? 0.4 : 0;
@@ -119,7 +134,6 @@ const TowerUnit: React.FC<{
   const turretY = totalHeight;
 
   useFrame((state, delta) => {
-    // 1. Turret Tracking Logic
     if (turretRef.current) {
       let closest: Enemy | null = null;
       let minDist = tower.range;
@@ -147,7 +161,6 @@ const TowerUnit: React.FC<{
       }
     }
 
-    // 2. Muzzle Flash Logic
     if (tower.lastShotTime !== lastShotRef.current) {
       lastShotRef.current = tower.lastShotTime;
       if (flashRef.current) {
@@ -173,12 +186,10 @@ const TowerUnit: React.FC<{
       }
     }
     
-    // 3. Aura Rotation
     if (auraRef.current) {
         auraRef.current.rotation.z += delta * 0.5;
     }
 
-    // 4. Overclock Animation
     if (overclockRef.current && tower.abilityDuration > 0) {
         overclockRef.current.rotation.x += delta * 5;
         overclockRef.current.rotation.y += delta * 10;
@@ -187,7 +198,6 @@ const TowerUnit: React.FC<{
     }
   });
 
-  // Determine Aura Visuals
   const hasAura = tower.passiveType !== PassiveType.NONE;
   let auraRange = 0;
   // @ts-ignore
@@ -198,7 +208,6 @@ const TowerUnit: React.FC<{
         e.stopPropagation();
         onSelect(tower.id);
     }}>
-      {/* Passive Aura Indicator */}
       {hasAura && (
           <mesh ref={auraRef} position={[0, 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
               <ringGeometry args={[auraRange - 0.1, auraRange, 32]} />
@@ -206,7 +215,6 @@ const TowerUnit: React.FC<{
           </mesh>
       )}
 
-      {/* Overclock Active Effect */}
       {tower.abilityDuration > 0 && tower.activeType === ActiveAbilityType.OVERCLOCK && (
         <group position={[0, totalHeight/2, 0]}>
           <group ref={overclockRef}>
@@ -223,7 +231,6 @@ const TowerUnit: React.FC<{
         </group>
       )}
 
-      {/* Selection Ring */}
       {isSelected && (
         <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[0.7, 0.8, 32]} />
@@ -231,7 +238,6 @@ const TowerUnit: React.FC<{
         </mesh>
       )}
 
-      {/* Range Indicator */}
       {isSelected && (
          <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
          <ringGeometry args={[tower.range - 0.05, tower.range, 64]} />
@@ -239,18 +245,15 @@ const TowerUnit: React.FC<{
        </mesh>
       )}
 
-      {/* --- LEVEL 1 BASE --- */}
       <mesh position={[0, 0.25, 0]} castShadow receiveShadow>
         <boxGeometry args={[0.8, baseHeight, 0.8]} />
         <meshStandardMaterial color="#1e293b" metalness={0.8} roughness={0.2} />
       </mesh>
       
-      {/* --- LEVEL 2 BASE EXTENSION --- */}
       {tower.level >= 2 && (
           <mesh position={[0, baseHeight + lvl2Height/2, 0]} castShadow receiveShadow>
              <boxGeometry args={[0.6, lvl2Height, 0.6]} />
              <meshStandardMaterial color="#334155" metalness={0.7} roughness={0.3} />
-             {/* Tech strip */}
              <mesh position={[0.31, 0, 0]} rotation={[0, 0, Math.PI/2]}>
                 <planeGeometry args={[lvl2Height * 0.8, 0.1]} />
                 <meshBasicMaterial color={displayColor} side={THREE.DoubleSide} />
@@ -258,12 +261,10 @@ const TowerUnit: React.FC<{
           </mesh>
       )}
 
-      {/* --- LEVEL 3 BASE EXTENSION --- */}
       {tower.level >= 3 && (
           <mesh position={[0, baseHeight + lvl2Height + lvl3Height/2, 0]} castShadow receiveShadow>
              <boxGeometry args={[0.5, lvl3Height, 0.5]} />
              <meshStandardMaterial color="#0f172a" metalness={0.9} roughness={0.1} />
-              {/* Tech strip */}
              <mesh position={[0.26, 0, 0]} rotation={[0, 0, Math.PI/2]}>
                 <planeGeometry args={[lvl3Height * 0.8, 0.1]} />
                 <meshBasicMaterial color={displayColor} side={THREE.DoubleSide} />
@@ -271,40 +272,28 @@ const TowerUnit: React.FC<{
           </mesh>
       )}
       
-      {/* --- TURRET GROUP --- */}
       <group ref={turretRef} position={[0, turretY, 0]}>
-        
-        {/* Swivel Base */}
         <mesh position={[0, 0, 0]} castShadow>
              <cylinderGeometry args={[0.3, 0.4, 0.2, 8]} />
              <meshStandardMaterial color={displayColor} emissive={displayColor} emissiveIntensity={0.2} />
         </mesh>
 
-        {/* Barrel Main */}
         <mesh position={[0, 0.25, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
           <cylinderGeometry args={[0.08, 0.08, 0.8]} />
           <meshStandardMaterial color="#334155" metalness={0.8} />
         </mesh>
         
-        {/* Barrel Tip */}
         <mesh position={[0, 0.25, 0.4]} rotation={[Math.PI / 2, 0, 0]}>
            <cylinderGeometry args={[0.1, 0.1, 0.1]} />
            <meshStandardMaterial color="#0f172a" />
         </mesh>
 
-        {/* --- UNIQUE TECH VISUALS --- */}
         {tower.techPath === TechPath.MAGMA && (
              <group position={[0, 0.4, 0]}>
-                {/* Level 3 gets a massive crystal */}
                 <mesh>
                    <coneGeometry args={[tower.level >= 3 ? 0.35 : 0.2, 0.5, 4]} />
-                   <meshStandardMaterial 
-                      color="#ef4444" 
-                      emissive="#7f1d1d" 
-                      emissiveIntensity={tower.level >= 3 ? 1 : 0.5} 
-                   />
+                   <meshStandardMaterial color="#ef4444" emissive="#7f1d1d" emissiveIntensity={tower.level >= 3 ? 1 : 0.5} />
                 </mesh>
-                {/* Floating rings for Magma 3 */}
                 {tower.level >= 3 && (
                     <mesh rotation={[Math.PI/4, 0, 0]}>
                         <torusGeometry args={[0.4, 0.02, 16, 32]} />
@@ -318,14 +307,8 @@ const TowerUnit: React.FC<{
              <group position={[0, 0.4, 0]}>
                 <mesh>
                    <sphereGeometry args={[tower.level >= 3 ? 0.35 : 0.2, 8, 8]} />
-                   <meshStandardMaterial 
-                      color="#06b6d4" 
-                      emissive="#06b6d4" 
-                      emissiveIntensity={0.5} 
-                      wireframe 
-                   />
+                   <meshStandardMaterial color="#06b6d4" emissive="#06b6d4" emissiveIntensity={0.5} wireframe />
                 </mesh>
-                {/* Inner Core for Plasma 3 */}
                 {tower.level >= 3 && (
                     <mesh>
                         <sphereGeometry args={[0.15, 8, 8]} />
@@ -339,13 +322,8 @@ const TowerUnit: React.FC<{
              <group position={[0, 0.4, 0]}>
                 <mesh>
                    <dodecahedronGeometry args={[tower.level >= 3 ? 0.35 : 0.2]} />
-                   <meshStandardMaterial 
-                      color="#8b5cf6" 
-                      emissive="#8b5cf6" 
-                      emissiveIntensity={0.5} 
-                   />
+                   <meshStandardMaterial color="#8b5cf6" emissive="#8b5cf6" emissiveIntensity={0.5} />
                 </mesh>
-                 {/* Satellites for Void 3 */}
                  {tower.level >= 3 && (
                      <group rotation={[0, 0, Math.PI/6]}>
                         <mesh position={[0.5, 0, 0]}>
@@ -361,7 +339,6 @@ const TowerUnit: React.FC<{
              </group>
         )}
 
-        {/* Muzzle Flash */}
         <group position={[0, 0.25, 0.9]}>
            <mesh ref={flashRef} visible={false}>
              <sphereGeometry args={[0.2, 8, 8]} /> 
@@ -381,16 +358,18 @@ const EffectsRenderer: React.FC<{ effects: Effect[] }> = ({ effects }) => {
             {effects.map(effect => {
                 const progress = 1 - (effect.lifetime / effect.maxLifetime); // 0 to 1
                 
-                // Advanced Shaders/Components
                 if (effect.type === 'NOVA') {
                      return <NukeEffect key={effect.id} position={effect.position} color={effect.color} progress={progress} />;
+                }
+
+                if (effect.type === 'ORBITAL_STRIKE') {
+                     return <OrbitalStrikeEffect key={effect.id} position={effect.position} color={effect.color} progress={progress} />;
                 }
 
                 if (effect.type === 'FREEZE_WAVE') {
                      return <FreezeEffect key={effect.id} position={effect.position} color={effect.color} progress={progress} />;
                 }
 
-                // Standard particles (Hits, Sparks)
                 const opacity = 1 - progress;
                 const scale = effect.scale * (2 - opacity); 
                 return (
@@ -401,6 +380,34 @@ const EffectsRenderer: React.FC<{ effects: Effect[] }> = ({ effects }) => {
                 );
             })}
         </>
+    );
+};
+
+const TargetingReticle: React.FC<{ position: Vector3Tuple, type: ActiveAbilityType }> = ({ position, type }) => {
+    const ref = useRef<THREE.Group>(null);
+    useFrame((state) => {
+        if (ref.current) {
+            ref.current.rotation.y += 0.05;
+            const scale = 1 + Math.sin(state.clock.elapsedTime * 10) * 0.1;
+            ref.current.scale.setScalar(scale);
+        }
+    });
+
+    return (
+        <group ref={ref} position={[position.x, 0.2, position.z]}>
+             <mesh rotation={[-Math.PI / 2, 0, 0]}>
+                <ringGeometry args={[3.5, 4, 32]} />
+                <meshBasicMaterial color="#ef4444" opacity={0.5} transparent side={THREE.DoubleSide} />
+             </mesh>
+             <mesh rotation={[-Math.PI / 2, 0, 0]}>
+                <ringGeometry args={[0.5, 0.8, 16]} />
+                <meshBasicMaterial color="#ef4444" opacity={0.8} transparent />
+             </mesh>
+             <mesh position={[0, 1, 0]}>
+                <cylinderGeometry args={[0.05, 0.05, 2]} />
+                <meshBasicMaterial color="#ef4444" transparent opacity={0.5} />
+             </mesh>
+        </group>
     );
 };
 
@@ -430,17 +437,19 @@ const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, s
         receiveShadow 
         onClick={(e) => {
           e.stopPropagation();
-          if (gameState.selectedTowerId) {
-             onSelectTower(null);
-          } else {
-             const point = e.point;
-             onPlaceTower({ x: Math.round(point.x), y: 0, z: Math.round(point.z) });
-          }
+          const point = e.point;
+          onPlaceTower({ x: point.x, y: 0, z: point.z }); // Pass raw float coords for reticle accuracy
         }}
         onPointerMove={(e) => {
           e.stopPropagation();
           const point = e.point;
-          setHoveredPos({ x: Math.round(point.x), y: 0.1, z: Math.round(point.z) });
+          if (gameState.targetingAbility) {
+              // Smooth float movement for targeting
+              setHoveredPos({ x: point.x, y: 0.1, z: point.z });
+          } else {
+              // Snap to grid for building
+              setHoveredPos({ x: Math.round(point.x), y: 0.1, z: Math.round(point.z) });
+          }
         }}
         onPointerOut={() => setHoveredPos(null)}
       >
@@ -469,7 +478,6 @@ const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, s
         );
       })}
 
-      {/* Enemies */}
       {gameState.enemies.map(enemy => (
         <group key={enemy.id} position={[enemy.position.x, enemy.position.y + 0.5, enemy.position.z]}>
           <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
@@ -481,7 +489,6 @@ const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, s
               />
             </Box>
           </Float>
-          {/* Health Bar */}
           <mesh position={[0, 0.8, 0]}>
             <planeGeometry args={[0.8, 0.1]} />
             <meshBasicMaterial color="red" />
@@ -493,7 +500,6 @@ const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, s
         </group>
       ))}
 
-      {/* Towers */}
       {gameState.towers.map(tower => (
         <TowerUnit 
           key={tower.id} 
@@ -504,20 +510,22 @@ const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, s
         />
       ))}
 
-      {/* Projectiles */}
       {gameState.projectiles.map(p => (
         <Sphere key={p.id} args={[0.15]} position={[p.position.x, p.position.y, p.position.z]}>
           <meshStandardMaterial color="#fbbf24" emissive="#fbbf24" emissiveIntensity={2} />
         </Sphere>
       ))}
       
-      {/* Effects */}
       <EffectsRenderer effects={gameState.effects} />
 
+      {/* Targeting Reticle */}
+      {gameState.targetingAbility && hoveredPos && (
+          <TargetingReticle position={hoveredPos} type={gameState.targetingAbility} />
+      )}
+
       {/* Ghost Tower */}
-      {ghostPos && !gameState.selectedTowerId && !gameState.isGameOver && (
+      {ghostPos && !gameState.selectedTowerId && !gameState.isGameOver && !gameState.targetingAbility && (
         <group position={[ghostPos.x, 0, ghostPos.z]}>
-          {/* Visual indicator that it's "pending" - maybe pulse or different opacity */}
           <mesh position={[0, 0.5, 0]}>
             <boxGeometry args={[0.8, 1, 0.8]} />
             <meshStandardMaterial 
@@ -544,6 +552,5 @@ const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, s
     </>
   );
 };
-import { Html } from '@react-three/drei';
 
 export default Scene;

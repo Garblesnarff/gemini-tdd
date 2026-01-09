@@ -140,11 +140,17 @@ export const ABILITY_CONFIG = {
   [PassiveType.RATE_AURA]: { range: 2.5, multiplier: 1.25 },   
   [PassiveType.SLOW_AURA]: { range: 3.5, slowFactor: 0.7 },    
 
-  [ActiveAbilityType.NUKE]: { 
+  [ActiveAbilityType.ERUPTION]: { 
     damage: 500, 
     range: 5, 
     cooldown: 20000, 
     color: '#ef4444'
+  },
+  [ActiveAbilityType.ORBITAL_STRIKE]: { 
+    damage: 1000, // Higher damage for snipers
+    range: 4, 
+    cooldown: 25000, 
+    color: '#fb7185' // Lighter red
   },
   [ActiveAbilityType.OVERCLOCK]: { 
     multiplier: 3, 
@@ -169,7 +175,7 @@ export const UPGRADE_CONFIG = {
     [TechPath.NONE]: { damage: 1, range: 1, fireRate: 1 },
     [TechPath.MAGMA]: { 
       2: { damage: 2.0, range: 1.0, fireRate: 0.9, passive: PassiveType.DAMAGE_AURA },
-      3: { damage: 4.0, range: 1.1, fireRate: 0.8, active: ActiveAbilityType.NUKE }
+      3: { damage: 4.0, range: 1.1, fireRate: 0.8, active: ActiveAbilityType.ERUPTION } // Defaults to Eruption
     },
     [TechPath.PLASMA]: { 
       2: { damage: 0.8, range: 0.9, fireRate: 2.0, passive: PassiveType.RATE_AURA },
@@ -190,7 +196,7 @@ export const TECH_PATH_INFO = {
     icon: 'Swords',
     abilities: [
         'Passive: Ignition Aura (Neighbors +25% DMG)',
-        'Active: Eruption (Massive AoE Damage)'
+        'Active: Eruption / Orbital Strike'
     ]
   },
   [TechPath.PLASMA]: { 

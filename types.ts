@@ -47,7 +47,8 @@ export enum PassiveType {
 
 export enum ActiveAbilityType {
   NONE = 'NONE',
-  NUKE = 'NUKE',           // Magma Lvl 3
+  ERUPTION = 'ERUPTION',   // Magma Lvl 3 (Basic/Fast)
+  ORBITAL_STRIKE = 'ORBITAL_STRIKE', // Magma Lvl 3 (Sniper)
   OVERCLOCK = 'OVERCLOCK', // Plasma Lvl 3
   FREEZE = 'FREEZE'        // Void Lvl 3
 }
@@ -114,7 +115,7 @@ export interface Projectile {
 
 export interface Effect {
   id: string;
-  type: 'EXPLOSION' | 'SPARK' | 'TEXT' | 'NOVA' | 'FREEZE_WAVE';
+  type: 'EXPLOSION' | 'SPARK' | 'TEXT' | 'NOVA' | 'FREEZE_WAVE' | 'ORBITAL_STRIKE';
   position: Vector3Tuple;
   color: string;
   scale: number;
@@ -138,4 +139,5 @@ export interface GameState {
   activeAugments: Augment[];
   augmentChoices: Augment[];
   isChoosingAugment: boolean;
+  targetingAbility: ActiveAbilityType | null;
 }

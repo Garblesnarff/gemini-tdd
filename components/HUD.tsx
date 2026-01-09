@@ -2,7 +2,7 @@
 import React, { useMemo } from 'react';
 import { GameState, TowerType, TechPath, ActiveAbilityType, TargetPriority, Vector3Tuple, Augment } from '../types';
 import { TOWER_STATS, TECH_PATH_INFO, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG } from '../constants';
-import { Heart, Coins, Swords, Shield, Zap, Info, ChevronRight, RefreshCcw, Radio, Eye, X, ArrowUpCircle, Check, Play, Pause, FastForward, Trash2, Crosshair, Target, Cpu, Flame, Snowflake, Ghost } from 'lucide-react';
+import { Heart, Coins, Swords, Shield, Zap, Info, ChevronRight, RefreshCcw, Radio, Eye, X, ArrowUpCircle, Check, Play, Pause, FastForward, Trash2, Crosshair, Target, Cpu, Flame, Snowflake, Ghost, Bomb } from 'lucide-react';
 
 interface HUDProps {
   gameState: GameState;
@@ -23,7 +23,6 @@ interface HUDProps {
   onBatchTrigger: (type: ActiveAbilityType) => void;
 }
 
-// Added interface for ability statistics to fix TypeScript unknown property errors
 interface AbilityStat {
   count: number;
   ready: number;
@@ -42,9 +41,10 @@ const AbilityHotbar: React.FC<{
     const abilityStats = useMemo(() => {
         // Explicitly typed record to ensure map iteration works correctly
         const stats: Record<string, AbilityStat> = {
-            [ActiveAbilityType.NUKE]: { count: 0, ready: 0, maxCd: 0, currentCd: 0, label: 'NUKE', key: '1', color: 'red' },
+            [ActiveAbilityType.ERUPTION]: { count: 0, ready: 0, maxCd: 0, currentCd: 0, label: 'ERUPT', key: '1', color: 'red' },
             [ActiveAbilityType.OVERCLOCK]: { count: 0, ready: 0, maxCd: 0, currentCd: 0, label: 'CLOCK', key: '2', color: 'cyan' },
             [ActiveAbilityType.FREEZE]: { count: 0, ready: 0, maxCd: 0, currentCd: 0, label: 'FREEZE', key: '3', color: 'purple' },
+            [ActiveAbilityType.ORBITAL_STRIKE]: { count: 0, ready: 0, maxCd: 0, currentCd: 0, label: 'STRIKE', key: '4', color: 'rose' },
         };
 
         gameState.towers.forEach(t => {
@@ -54,19 +54,23 @@ const AbilityHotbar: React.FC<{
 
             s.count++;
             if (t.abilityCooldown <= 0) {
-                // Check if the tower has at least one target in range to be considered "ready to trigger"
-                const hasTarget = gameState.enemies.some(enemy => {
-                    const dist = Math.sqrt(
-                        Math.pow(enemy.position.x - t.position.x, 2) +
-                        Math.pow(enemy.position.z - t.position.z, 2)
-                    );
-                    return dist <= t.range;
-                });
-                if (hasTarget) {
+                // Special check for ORBITAL_STRIKE: It's global, so it doesn't need a local target check
+                if (t.activeType === ActiveAbilityType.ORBITAL_STRIKE) {
                     s.ready++;
+                } else {
+                    // Other abilities need a valid target in range
+                    const hasTarget = gameState.enemies.some(enemy => {
+                        const dist = Math.sqrt(
+                            Math.pow(enemy.position.x - t.position.x, 2) +
+                            Math.pow(enemy.position.z - t.position.z, 2)
+                        );
+                        return dist <= t.range;
+                    });
+                    if (hasTarget) {
+                        s.ready++;
+                    }
                 }
             } else {
-                // Track the smallest cooldown among towers of this type to show "next ready"
                 if (s.currentCd === 0 || t.abilityCooldown < s.currentCd) {
                     s.currentCd = t.abilityCooldown;
                     s.maxCd = t.abilityMaxCooldown;
@@ -74,6 +78,9 @@ const AbilityHotbar: React.FC<{
             }
         });
 
+        // Filter out abilities that have no towers built (count == 0) to keep HUD clean? 
+        // Or keep them disabled? User didn't specify, but let's show them disabled if not present to show potential?
+        // Actually, let's only return what is in the list above to preserve order 1,2,3,4
         return stats;
     }, [gameState.towers, gameState.enemies]);
 
@@ -84,11 +91,13 @@ const AbilityHotbar: React.FC<{
                 const activeType = type as ActiveAbilityType;
                 const hasTech = s.count > 0;
                 const progress = s.currentCd > 0 ? (s.currentCd / s.maxCd) * 100 : 0;
+                const isTargeting = gameState.targetingAbility === activeType;
                 
                 let Icon = Crosshair;
-                if (activeType === ActiveAbilityType.NUKE) Icon = Flame;
+                if (activeType === ActiveAbilityType.ERUPTION) Icon = Flame;
                 if (activeType === ActiveAbilityType.OVERCLOCK) Icon = Zap;
                 if (activeType === ActiveAbilityType.FREEZE) Icon = Snowflake;
+                if (activeType === ActiveAbilityType.ORBITAL_STRIKE) Icon = Bomb;
 
                 return (
                     <button
@@ -98,13 +107,15 @@ const AbilityHotbar: React.FC<{
                         className={`
                             group relative w-16 h-16 rounded-xl border-2 flex flex-col items-center justify-center transition-all duration-200 overflow-hidden
                             ${!hasTech ? 'opacity-20 bg-slate-900 border-slate-800 grayscale cursor-not-allowed' : 
-                              s.ready > 0 
-                                ? `bg-slate-900/80 border-${s.color}-500/50 hover:border-${s.color}-400 shadow-[0_0_15px_rgba(59,130,246,0.2)] active:scale-95` 
-                                : 'bg-slate-950/90 border-slate-800 cursor-not-allowed grayscale'}
+                              isTargeting 
+                                ? `bg-red-500/20 border-red-500 animate-pulse shadow-[0_0_20px_rgba(239,68,68,0.5)]` 
+                                : s.ready > 0 
+                                    ? `bg-slate-900/80 border-${s.color}-500/50 hover:border-${s.color}-400 shadow-[0_0_15px_rgba(59,130,246,0.2)] active:scale-95` 
+                                    : 'bg-slate-950/90 border-slate-800 cursor-not-allowed grayscale'}
                         `}
                     >
                         {/* Cooldown Fill */}
-                        {s.currentCd > 0 && (
+                        {s.currentCd > 0 && !isTargeting && (
                             <div 
                                 className="absolute bottom-0 left-0 right-0 bg-slate-800/80 origin-bottom z-0"
                                 style={{ height: `${progress}%` }}
@@ -112,8 +123,10 @@ const AbilityHotbar: React.FC<{
                         )}
 
                         <div className="relative z-10 flex flex-col items-center">
-                            <Icon size={24} className={s.ready > 0 ? `text-${s.color}-400` : 'text-slate-500'} />
-                            <span className="text-[9px] font-black uppercase tracking-tighter mt-1 opacity-70">{s.label}</span>
+                            <Icon size={24} className={isTargeting ? 'text-red-400' : s.ready > 0 ? `text-${s.color}-400` : 'text-slate-500'} />
+                            <span className={`text-[9px] font-black uppercase tracking-tighter mt-1 ${isTargeting ? 'text-red-400' : 'opacity-70'}`}>
+                                {isTargeting ? 'TARGETING' : s.label}
+                            </span>
                         </div>
 
                         {/* Ready Badge */}
@@ -132,7 +145,7 @@ const AbilityHotbar: React.FC<{
                         <div className="absolute left-full ml-4 hidden group-hover:block bg-slate-950 border border-slate-800 p-2 rounded-lg text-[10px] w-32 shadow-2xl z-50 pointer-events-none">
                             <div className="font-bold text-white mb-1 uppercase tracking-wider">{s.label} PROTOCOL</div>
                             <div className="text-slate-400 leading-tight">
-                                {!hasTech ? "Tech not researched." : s.ready > 0 ? `Trigger ${s.ready} tower(s).` : `Recharging... ${(s.currentCd/1000).toFixed(1)}s`}
+                                {!hasTech ? "Tech not researched." : isTargeting ? "Click map to launch." : s.ready > 0 ? `Trigger ${s.ready} tower(s).` : `Recharging... ${(s.currentCd/1000).toFixed(1)}s`}
                             </div>
                         </div>
                     </button>
@@ -320,6 +333,19 @@ const HUD: React.FC<HUDProps> = ({
              </div>
          </div>
       )}
+      
+      {/* TARGETING OVERLAY */}
+      {gameState.targetingAbility && (
+         <div className="absolute bottom-32 left-1/2 -translate-x-1/2 pointer-events-auto animate-in slide-in-from-bottom-4 zoom-in-95 duration-200">
+             <div className="bg-red-900/90 backdrop-blur-md border border-red-500 p-4 rounded-2xl shadow-2xl flex items-center gap-4">
+                 <div className="flex flex-col">
+                     <div className="text-white font-bold uppercase tracking-wider text-sm">Targeting Orbital Strike</div>
+                     <div className="text-[10px] text-red-200">Click anywhere to launch</div>
+                 </div>
+                 <button onClick={onCancelPlacement} className="p-2 bg-red-500/40 hover:bg-red-500/60 text-white rounded-lg transition-colors"><X size={24} /></button>
+             </div>
+         </div>
+      )}
 
       {/* Bottom Center: Shop/Upgrade */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto w-full md:w-auto flex justify-center px-4">
@@ -393,10 +419,10 @@ const HUD: React.FC<HUDProps> = ({
         ) : (
         <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 p-2 rounded-2xl flex gap-2 shadow-2xl shadow-black/50 overflow-x-auto max-w-full">
           {Object.entries(TOWER_STATS).map(([type, stats]) => (
-            <button key={type} onClick={() => onSelectTower(type as TowerType)} className={`group relative min-w-[80px] p-3 rounded-xl flex flex-col items-center gap-2 transition-all duration-200 ${selectedTowerType === type && !pendingPlacement ? 'bg-slate-800 border-2 border-blue-500' : 'bg-transparent border-2 border-transparent hover:bg-slate-800/50'} ${gameState.gold < stats.cost ? 'opacity-40 grayscale' : ''}`}>
+            <button key={type} onClick={() => onSelectTower(type as TowerType)} className={`group relative min-w-[80px] p-3 rounded-xl flex flex-col items-center gap-2 transition-all duration-200 ${selectedTowerType === type && !pendingPlacement && !gameState.targetingAbility ? 'bg-slate-800 border-2 border-blue-500' : 'bg-transparent border-2 border-transparent hover:bg-slate-800/50'} ${gameState.gold < stats.cost ? 'opacity-40 grayscale' : ''}`}>
               <div className="w-8 h-8 rounded-full shadow-lg transition-transform group-hover:scale-110" style={{ backgroundColor: stats.color }} />
               <div className="flex flex-col items-center"><span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">{type}</span><div className="flex items-center gap-1 text-yellow-400 text-xs font-black bg-slate-950/50 px-2 py-0.5 rounded-full mt-1"><Coins size={10} />{stats.cost}</div></div>
-              {selectedTowerType === type && !pendingPlacement && (<div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 w-40 bg-slate-900/95 backdrop-blur border border-slate-700 p-3 rounded-xl shadow-xl z-50 animate-in slide-in-from-bottom-2 duration-200"><h4 className="font-bold text-blue-400 text-[10px] mb-2 uppercase tracking-wider border-b border-slate-700 pb-1">Stats</h4><div className="space-y-1.5"><div className="flex justify-between text-[10px] text-slate-300"><span>DMG</span><span className="text-white">{stats.damage}</span></div><div className="flex justify-between text-[10px] text-slate-300"><span>RATE</span><span className="text-white">{stats.fireRate}/s</span></div><div className="flex justify-between text-[10px] text-slate-300"><span>RNG</span><span className="text-white">{stats.range}</span></div></div></div>)}
+              {selectedTowerType === type && !pendingPlacement && !gameState.targetingAbility && (<div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 w-40 bg-slate-900/95 backdrop-blur border border-slate-700 p-3 rounded-xl shadow-xl z-50 animate-in slide-in-from-bottom-2 duration-200"><h4 className="font-bold text-blue-400 text-[10px] mb-2 uppercase tracking-wider border-b border-slate-700 pb-1">Stats</h4><div className="space-y-1.5"><div className="flex justify-between text-[10px] text-slate-300"><span>DMG</span><span className="text-white">{stats.damage}</span></div><div className="flex justify-between text-[10px] text-slate-300"><span>RATE</span><span className="text-white">{stats.fireRate}/s</span></div><div className="flex justify-between text-[10px] text-slate-300"><span>RNG</span><span className="text-white">{stats.range}</span></div></div></div>)}
             </button>
           ))}
         </div>
@@ -405,7 +431,7 @@ const HUD: React.FC<HUDProps> = ({
 
       {/* Bottom Right: Action Button */}
       <div className="absolute bottom-4 right-4 md:bottom-6 md:right-6 pointer-events-auto">
-        {gameState.waveStatus === 'IDLE' && !gameState.isGameOver && !selectedTower && !pendingPlacement && !gameState.isChoosingAugment && (
+        {gameState.waveStatus === 'IDLE' && !gameState.isGameOver && !selectedTower && !pendingPlacement && !gameState.isChoosingAugment && !gameState.targetingAbility && (
           <button onClick={onStartWave} className="group bg-blue-600 hover:bg-blue-500 text-white pl-6 pr-5 py-4 rounded-xl font-bold text-lg shadow-[0_0_30px_rgba(37,99,235,0.4)] flex items-center gap-3 transition-all transform hover:scale-105">
             <span>NEXT WAVE</span><div className="bg-blue-700 rounded-lg p-1 group-hover:translate-x-1 transition-transform"><ChevronRight size={20} /></div>
           </button>

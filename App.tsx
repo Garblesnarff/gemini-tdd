@@ -26,7 +26,8 @@ const App: React.FC = () => {
     selectedTowerId: null,
     activeAugments: [],
     augmentChoices: [],
-    isChoosingAugment: false
+    isChoosingAugment: false,
+    targetingAbility: null
   });
 
   const [selectedTowerType, setSelectedTowerType] = useState<TowerType>(TowerType.BASIC);
@@ -347,7 +348,8 @@ const App: React.FC = () => {
 
             nextTowers[towerIndex] = { ...tower, abilityCooldown: config.cooldown };
 
-            if (tower.activeType === ActiveAbilityType.NUKE) {
+            if (tower.activeType === ActiveAbilityType.ERUPTION) {
+                // Self-centered explosion (old NUKE logic)
                 nextEffects.push({ id: Math.random().toString(), type: 'NOVA', position: tower.position, color: config.color, scale: 0.1, lifetime: 30, maxLifetime: 30 });
                 nextEnemies.forEach(e => {
                     const dist = Math.sqrt(Math.pow(e.position.x - tower.position.x, 2) + Math.pow(e.position.z - tower.position.z, 2));
@@ -370,15 +372,91 @@ const App: React.FC = () => {
     });
   };
 
+  // Triggering global Nuke at specific position
+  const executeGlobalAbility = (pos: Vector3Tuple, type: ActiveAbilityType) => {
+      if (type !== ActiveAbilityType.ORBITAL_STRIKE) return;
+
+      setGameState(prev => {
+          const nextTowers = [...prev.towers];
+          const nextEffects = [...prev.effects];
+          const nextEnemies = prev.enemies.map(e => ({ ...e }));
+          let nextGold = prev.gold;
+          
+          // Find all available towers of this type
+          const availableTowers = nextTowers.filter(t => t.activeType === type && t.abilityCooldown <= 0);
+          
+          if (availableTowers.length === 0) return prev;
+
+          const config = ABILITY_CONFIG[type];
+          // Use cooldowns
+          availableTowers.forEach(t => {
+             const idx = nextTowers.findIndex(nt => nt.id === t.id);
+             if (idx > -1) {
+                 nextTowers[idx] = { ...nextTowers[idx], abilityCooldown: config.cooldown };
+             }
+          });
+
+          // Scale damage based on number of towers? Or just fire one big blast.
+          // Let's do: Damage = Base Damage * Number of Ready Towers (Simulating a volley)
+          const totalDamage = config.damage * availableTowers.length;
+          const radius = 4; // Blast radius
+
+          // Visuals
+          nextEffects.push({
+             id: Math.random().toString(),
+             type: 'ORBITAL_STRIKE',
+             position: pos,
+             color: config.color,
+             scale: radius,
+             lifetime: 40,
+             maxLifetime: 40
+          });
+
+          // Logic
+          nextEnemies.forEach(e => {
+             const dist = Math.sqrt(Math.pow(e.position.x - pos.x, 2) + Math.pow(e.position.z - pos.z, 2));
+             if (dist <= radius) {
+                 e.health -= totalDamage;
+                 if (e.health <= 0) {
+                     const stats = ENEMY_STATS[e.type];
+                     nextGold += stats.goldReward;
+                 }
+             }
+          });
+
+          const survivingEnemies = nextEnemies.filter(e => e.health > 0);
+          return { ...prev, towers: nextTowers, enemies: survivingEnemies, effects: nextEffects, gold: nextGold, targetingAbility: null };
+      });
+  };
+
   const handleTriggerAbility = (towerId: string) => {
-      executeAbilityOnTowers([towerId]);
+      // Legacy check for button clicking a specific tower
+      const tower = gameState.towers.find(t => t.id === towerId);
+      if (tower?.activeType === ActiveAbilityType.ORBITAL_STRIKE) {
+          // If a user clicks 'Activate' on a specific tower, we enter global targeting mode for NUKE
+          setGameState(prev => ({ ...prev, targetingAbility: ActiveAbilityType.ORBITAL_STRIKE, selectedTowerId: null }));
+      } else {
+          executeAbilityOnTowers([towerId]);
+      }
   };
 
   const handleBatchTriggerAbility = (activeType: ActiveAbilityType) => {
       const currentGameState = gameStateRef.current;
+      
+      // If Targeting type, enter targeting mode instead of firing instantly
+      if (activeType === ActiveAbilityType.ORBITAL_STRIKE) {
+          setGameState(prev => ({ 
+              ...prev, 
+              targetingAbility: prev.targetingAbility === ActiveAbilityType.ORBITAL_STRIKE ? null : ActiveAbilityType.ORBITAL_STRIKE,
+              selectedTowerId: null,
+              pendingPlacement: null
+          }));
+          return;
+      }
+
+      // Standard behavior for other abilities
       const towersToTrigger = currentGameState.towers.filter(t => {
           if (t.activeType !== activeType || t.abilityCooldown > 0) return false;
-          // Only trigger if at least one enemy is within the tower's range
           return currentGameState.enemies.some(enemy => {
               const dist = Math.sqrt(
                   Math.pow(enemy.position.x - t.position.x, 2) +
@@ -396,9 +474,14 @@ const App: React.FC = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
         if (gameStateRef.current.isChoosingAugment) return;
-        if (e.key === '1') handleBatchTriggerAbility(ActiveAbilityType.NUKE);
+        if (e.key === '1') handleBatchTriggerAbility(ActiveAbilityType.ERUPTION);
         if (e.key === '2') handleBatchTriggerAbility(ActiveAbilityType.OVERCLOCK);
         if (e.key === '3') handleBatchTriggerAbility(ActiveAbilityType.FREEZE);
+        if (e.key === '4') handleBatchTriggerAbility(ActiveAbilityType.ORBITAL_STRIKE);
+        if (e.key === 'Escape') {
+             setPendingPlacement(null);
+             setGameState(prev => ({ ...prev, selectedTowerId: null, targetingAbility: null }));
+        }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -406,6 +489,13 @@ const App: React.FC = () => {
 
   const handleGridClick = (pos: Vector3Tuple) => {
       if (gameState.isGameOver || gameState.gameSpeed === 0 || gameState.isChoosingAugment) return;
+      
+      // Handle Targeting Mode Click
+      if (gameState.targetingAbility) {
+          executeGlobalAbility(pos, gameState.targetingAbility);
+          return;
+      }
+
       if (gameState.selectedTowerId) setGameState(prev => ({ ...prev, selectedTowerId: null }));
       const stats = TOWER_STATS[selectedTowerType];
       if (gameState.gold < stats.cost) return;
@@ -437,8 +527,16 @@ const App: React.FC = () => {
       setPendingPlacement(null);
   };
 
-  const handleCancelPlacement = () => setPendingPlacement(null);
-  const handleSelectTower = (towerId: string | null) => { setGameState(prev => ({ ...prev, selectedTowerId: towerId })); setPendingPlacement(null); };
+  const handleCancelPlacement = () => {
+      setPendingPlacement(null);
+      setGameState(prev => ({ ...prev, targetingAbility: null }));
+  };
+  
+  const handleSelectTower = (towerId: string | null) => { 
+      if (gameState.targetingAbility) return;
+      setGameState(prev => ({ ...prev, selectedTowerId: towerId })); 
+      setPendingPlacement(null); 
+  };
 
   const handleUpgradeTower = (towerId: string, path: TechPath) => {
     setGameState(prev => {
@@ -458,7 +556,17 @@ const App: React.FC = () => {
         const newBaseFireRate = baseStats.fireRate * modifiers.fireRate;
         const newBaseRange = baseStats.range * modifiers.range;
         const newPassive = modifiers.passive || tower.passiveType;
-        const newActive = modifiers.active || tower.activeType;
+        
+        // --- LOGIC TO SPLIT ABILITIES BASED ON TOWER TYPE ---
+        let newActive = modifiers.active || tower.activeType;
+        if (newActive === ActiveAbilityType.ERUPTION) {
+           // If it's a sniper, upgrade to Orbital Strike instead of base Eruption
+           if (tower.type === TowerType.SNIPER) {
+               newActive = ActiveAbilityType.ORBITAL_STRIKE;
+           }
+        }
+        // ----------------------------------------------------
+
         let maxCd = 0; if (newActive !== ActiveAbilityType.NONE) {
             // @ts-ignore
             maxCd = ABILITY_CONFIG[newActive].cooldown;
@@ -496,7 +604,8 @@ const App: React.FC = () => {
     setGameState({
       gold: 400, lives: 20, wave: 0, enemies: [], towers: [], projectiles: [], effects: [],
       gameSpeed: 1, isGameOver: false, waveStatus: 'IDLE', waveIntel: 'Ready for deployment, Commander.',
-      selectedTowerId: null, activeAugments: [], augmentChoices: [], isChoosingAugment: false
+      selectedTowerId: null, activeAugments: [], augmentChoices: [], isChoosingAugment: false,
+      targetingAbility: null
     });
     setPendingPlacement(null);
   };
@@ -504,7 +613,13 @@ const App: React.FC = () => {
   return (
     <div className="w-full h-full bg-slate-900 text-white font-sans overflow-hidden">
       <Canvas shadows camera={{ position: [10, 15, 10], fov: 45 }}>
-        <Scene gameState={gameState} onPlaceTower={handleGridClick} onSelectTower={handleSelectTower} selectedTowerType={selectedTowerType} pendingPlacement={pendingPlacement} />
+        <Scene 
+            gameState={gameState} 
+            onPlaceTower={handleGridClick} 
+            onSelectTower={handleSelectTower} 
+            selectedTowerType={selectedTowerType} 
+            pendingPlacement={pendingPlacement} 
+        />
         <OrbitControls makeDefault maxPolarAngle={Math.PI / 2.2} minDistance={5} maxDistance={30} />
       </Canvas>
 
