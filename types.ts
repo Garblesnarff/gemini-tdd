@@ -12,6 +12,76 @@ export enum EnemyType {
   BOSS = 'BOSS'
 }
 
+export enum StageId {
+  STAGE_1 = 'STAGE_1',
+  STAGE_2 = 'STAGE_2',
+  STAGE_3 = 'STAGE_3',
+  STAGE_4 = 'STAGE_4',
+  STAGE_5 = 'STAGE_5'
+}
+
+export interface EnvironmentConfig {
+  skyPreset: 'night' | 'sunset' | 'storm' | 'void' | 'inferno';
+  gridColor: string;
+  pathColor: string;
+  ambientIntensity: number;
+  fogColor?: string;
+  fogDensity?: number;
+}
+
+export interface BossPhase {
+  healthThreshold: number; // 0.75, 0.5, 0.25
+  speedMultiplier: number;
+  damageResistance: number; // 0-1 percentage reduction
+  abilityUnlock?: string;
+  announcement: string;
+  visualChange?: 'enraged' | 'shielded' | 'unstable';
+}
+
+export interface BossAbility {
+  id: string;
+  name: string;
+  type: 'DISABLE_ZONE' | 'SPAWN_MINIONS' | 'SHIELD_PULSE' | 'SPEED_BURST' | 'REGEN';
+  cooldown: number;
+  duration?: number;
+  radius?: number;
+  value?: number;
+}
+
+export interface MinionSpawn {
+  triggerHealth: number; // 0-1
+  enemyType: EnemyType;
+  count: number;
+  announcement?: string;
+}
+
+export interface BossConfig {
+  id: string;
+  name: string;
+  title: string;
+  baseHealth: number;
+  speed: number;
+  size: number;
+  color: string;
+  phases: BossPhase[];
+  abilities: BossAbility[];
+  minionSpawns: MinionSpawn[];
+}
+
+export interface StageConfig {
+  id: StageId;
+  name: string;
+  description: string;
+  waves: number;
+  path: Vector3Tuple[];
+  startingGold: number;
+  startingLives: number;
+  enemyScaling: number;
+  bossConfig: BossConfig;
+  unlockRequirement: StageId | null;
+  environment: EnvironmentConfig;
+}
+
 export interface Enemy {
   id: string;
   type: EnemyType;
@@ -20,9 +90,14 @@ export interface Enemy {
   speed: number;
   position: Vector3Tuple;
   pathIndex: number;
-  progress: number; // 0 to 1 between waypoints
-  frozen?: number; // 0 to 1 (slow factor, 0 is stopped, 1 is normal)
-  freezeTimer?: number; // Time remaining for full freeze
+  progress: number;
+  frozen?: number;
+  freezeTimer?: number;
+  isBoss?: boolean;
+  bossConfig?: BossConfig;
+  currentPhase?: number;
+  abilityCooldowns?: Record<string, number>;
+  isShielded?: boolean;
 }
 
 export enum TowerType {
@@ -33,24 +108,24 @@ export enum TowerType {
 
 export enum TechPath {
   NONE = 'NONE',
-  MAGMA = 'MAGMA',   // Damage Focus
-  PLASMA = 'PLASMA', // Fire Rate Focus
-  VOID = 'VOID'      // Range Focus
+  MAGMA = 'MAGMA',
+  PLASMA = 'PLASMA',
+  VOID = 'VOID'
 }
 
 export enum PassiveType {
   NONE = 'NONE',
-  DAMAGE_AURA = 'DAMAGE_AURA', // Magma Lvl 2
-  RATE_AURA = 'RATE_AURA',     // Plasma Lvl 2
-  SLOW_AURA = 'SLOW_AURA'      // Void Lvl 2
+  DAMAGE_AURA = 'DAMAGE_AURA',
+  RATE_AURA = 'RATE_AURA',
+  SLOW_AURA = 'SLOW_AURA'
 }
 
 export enum ActiveAbilityType {
   NONE = 'NONE',
-  ERUPTION = 'ERUPTION',   // Magma Lvl 3 (Basic/Fast)
-  ORBITAL_STRIKE = 'ORBITAL_STRIKE', // Magma Lvl 3 (Sniper)
-  OVERCLOCK = 'OVERCLOCK', // Plasma Lvl 3
-  FREEZE = 'FREEZE'        // Void Lvl 3
+  ERUPTION = 'ERUPTION',
+  ORBITAL_STRIKE = 'ORBITAL_STRIKE',
+  OVERCLOCK = 'OVERCLOCK',
+  FREEZE = 'FREEZE'
 }
 
 export enum TargetPriority {
@@ -75,7 +150,7 @@ export interface Augment {
     stat?: 'damage' | 'range' | 'fireRate';
     value: number;
     target?: TowerType | 'ALL';
-    techTarget?: TechPath; // New field for path-specific buffs
+    techTarget?: TechPath;
     special?: 'INTEREST' | 'SPLASH_DAMAGE';
   };
 }
@@ -85,21 +160,21 @@ export interface Tower {
   type: TowerType;
   position: Vector3Tuple;
   range: number;
-  fireRate: number; 
+  fireRate: number;
   damage: number;
   baseRange: number;
   baseFireRate: number;
   baseDamage: number;
-  cooldown: number; 
-  lastShotTime: number; 
+  cooldown: number;
+  lastShotTime: number;
   level: number;
   techPath: TechPath;
   totalInvested: number;
   passiveType: PassiveType;
   activeType: ActiveAbilityType;
-  abilityCooldown: number;     
-  abilityMaxCooldown: number;  
-  abilityDuration: number;     
+  abilityCooldown: number;
+  abilityMaxCooldown: number;
+  abilityDuration: number;
   targetPriority: TargetPriority;
 }
 
@@ -119,8 +194,17 @@ export interface Effect {
   position: Vector3Tuple;
   color: string;
   scale: number;
-  lifetime: number; 
-  maxLifetime: number; 
+  lifetime: number;
+  maxLifetime: number;
+}
+
+export type GamePhase = 'MENU' | 'STAGE_SELECT' | 'PLAYING' | 'BOSS_INTRO' | 'BOSS_FIGHT' | 'STAGE_COMPLETE' | 'GAME_OVER';
+
+export interface StageProgress {
+  unlocked: boolean;
+  completed: boolean;
+  bestWave: number;
+  stars: 0 | 1 | 2 | 3;
 }
 
 export interface GameState {
@@ -131,7 +215,7 @@ export interface GameState {
   towers: Tower[];
   projectiles: Projectile[];
   effects: Effect[];
-  gameSpeed: number; 
+  gameSpeed: number;
   isGameOver: boolean;
   waveStatus: 'IDLE' | 'SPAWNING' | 'CLEARING';
   waveIntel?: string;
@@ -140,4 +224,10 @@ export interface GameState {
   augmentChoices: Augment[];
   isChoosingAugment: boolean;
   targetingAbility: ActiveAbilityType | null;
+  // New Stage System Fields
+  currentStage: StageId;
+  stageProgress: Record<StageId, StageProgress>;
+  gamePhase: GamePhase;
+  activeBoss: Enemy | null;
+  bossAnnouncement: string | null;
 }
