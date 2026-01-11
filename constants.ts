@@ -1,188 +1,70 @@
 
-import { TowerType, EnemyType, TechPath, PassiveType, ActiveAbilityType, Augment, AugmentType, StageId, StageConfig, BossConfig } from './types';
+import { TowerType, EnemyType, TechPath, PassiveType, ActiveAbilityType, Augment, AugmentType } from './types';
 
-export const MAX_LEVEL = 3;
-export const SELL_REFUND_RATIO = 0.7;
 export const GRID_SIZE = 12;
-
-// Standard Path Waypoints for Stage 1 (Tutorial)
 export const PATH_WAYPOINTS = [
-  { x: -8, y: 0.2, z: -6 },
-  { x: 0, y: 0.2, z: -6 },
-  { x: 0, y: 0.2, z: 0 },
-  { x: -4, y: 0.2, z: 0 },
-  { x: -4, y: 0.2, z: 6 },
-  { x: 8, y: 0.2, z: 6 },
+  { x: -5, y: 0.2, z: -5 },
+  { x: 5, y: 0.2, z: -5 },
+  { x: 5, y: 0.2, z: 0 },
+  { x: -5, y: 0.2, z: 0 },
+  { x: -5, y: 0.2, z: 5 },
+  { x: 5, y: 0.2, z: 5 },
 ];
 
-export const BOSS_CONFIGS: Record<string, BossConfig> = {
-  sentinel_prime: {
-    id: 'sentinel_prime',
-    name: 'SENTINEL PRIME',
-    title: 'Guardian of the Forward Base',
-    baseHealth: 5000,
-    speed: 0.5,
-    size: 2.5,
-    color: '#f97316',
-    phases: [
-      { healthThreshold: 1.0, speedMultiplier: 1.0, damageResistance: 0, announcement: 'SENTINEL PRIME APPROACHES' },
-      { healthThreshold: 0.75, speedMultiplier: 1.2, damageResistance: 0.1, announcement: 'PHASE 2: ACCELERATING', visualChange: 'enraged' },
-      { healthThreshold: 0.5, speedMultiplier: 1.0, damageResistance: 0.25, announcement: 'PHASE 3: SHIELDS ONLINE', visualChange: 'shielded', abilityUnlock: 'shield_pulse' },
-      { healthThreshold: 0.25, speedMultiplier: 1.5, damageResistance: 0, announcement: 'FINAL PHASE: CRITICAL DAMAGE', visualChange: 'unstable' }
-    ],
-    abilities: [
-      { id: 'spawn_minions', name: 'Deploy Drones', type: 'SPAWN_MINIONS', cooldown: 15000 },
-      { id: 'shield_pulse', name: 'Emergency Shields', type: 'SHIELD_PULSE', cooldown: 20000, duration: 3000 }
-    ],
-    minionSpawns: [
-      { triggerHealth: 0.6, enemyType: EnemyType.BASIC, count: 5, announcement: 'DEPLOYING DEFENSE DRONES' },
-      { triggerHealth: 0.3, enemyType: EnemyType.FAST, count: 8, announcement: 'RELEASING INTERCEPTORS' }
-    ]
-  }
-};
-
-export const STAGE_CONFIGS: Record<StageId, StageConfig> = {
-  [StageId.STAGE_1]: {
-    id: StageId.STAGE_1,
-    name: "Forward Base",
-    description: "Secure the perimeter of our newly established research site.",
-    waves: 25,
-    path: PATH_WAYPOINTS,
-    startingGold: 400,
-    startingLives: 20,
-    enemyScaling: 1.0,
-    bossConfig: BOSS_CONFIGS.sentinel_prime,
-    unlockRequirement: null,
-    environment: {
-      skyPreset: 'night',
-      gridColor: '#1e293b',
-      pathColor: '#334155',
-      ambientIntensity: 0.5
-    }
-  },
-  [StageId.STAGE_2]: {
-    id: StageId.STAGE_2,
-    name: "The Gauntlet",
-    description: "A narrow canyon pass where precision is your only ally.",
-    waves: 25,
-    path: [
-      { x: -10, y: 0.2, z: -8 },
-      { x: -10, y: 0.2, z: 8 },
-      { x: -5, y: 0.2, z: 8 },
-      { x: -5, y: 0.2, z: -8 },
-      { x: 0, y: 0.2, z: -8 },
-      { x: 0, y: 0.2, z: 8 },
-      { x: 10, y: 0.2, z: 8 }
-    ],
-    startingGold: 350,
-    startingLives: 15,
-    enemyScaling: 1.3,
-    bossConfig: { ...BOSS_CONFIGS.sentinel_prime, name: 'RAZORWING', title: 'The Sky-Splitter', speed: 1.2, color: '#fbbf24' },
-    unlockRequirement: StageId.STAGE_1,
-    environment: {
-      skyPreset: 'sunset',
-      gridColor: '#451a03',
-      pathColor: '#78350f',
-      ambientIntensity: 0.7,
-      fogColor: '#451a03',
-      fogDensity: 0.02
-    }
-  },
-  [StageId.STAGE_3]: {
-    id: StageId.STAGE_3,
-    name: "Crossroads",
-    description: "Multiple entry points merge into a single, chaotic chokepoint.",
-    waves: 30,
-    path: [
-      { x: -10, y: 0.2, z: 0 },
-      { x: 0, y: 0.2, z: 0 },
-      { x: 0, y: 0.2, z: -10 },
-      { x: 5, y: 0.2, z: -10 },
-      { x: 5, y: 0.2, z: 10 }
-    ],
-    startingGold: 500,
-    startingLives: 20,
-    enemyScaling: 1.6,
-    bossConfig: { ...BOSS_CONFIGS.sentinel_prime, name: 'VOID REAVER', title: 'Ender of Logic', baseHealth: 8000, color: '#8b5cf6' },
-    unlockRequirement: StageId.STAGE_2,
-    environment: {
-      skyPreset: 'void',
-      gridColor: '#1e1b4b',
-      pathColor: '#312e81',
-      ambientIntensity: 0.3,
-      fogColor: '#000',
-      fogDensity: 0.05
-    }
-  },
-  [StageId.STAGE_4]: {
-    id: StageId.STAGE_4,
-    name: "The Spiral",
-    description: "Defend the core at the center of a winding gravity well.",
-    waves: 30,
-    path: [
-      { x: -10, y: 0.2, z: -10 },
-      { x: 10, y: 0.2, z: -10 },
-      { x: 10, y: 0.2, z: 10 },
-      { x: -5, y: 0.2, z: 10 },
-      { x: -5, y: 0.2, z: -5 },
-      { x: 5, y: 0.2, z: -5 },
-      { x: 5, y: 0.2, z: 0 }
-    ],
-    startingGold: 450,
-    startingLives: 10,
-    enemyScaling: 2.0,
-    bossConfig: { ...BOSS_CONFIGS.sentinel_prime, name: 'OMEGA UNIT', title: 'World-Eater Prototype', baseHealth: 15000, size: 4, color: '#be123c' },
-    unlockRequirement: StageId.STAGE_3,
-    environment: {
-      skyPreset: 'storm',
-      gridColor: '#0f172a',
-      pathColor: '#1e293b',
-      ambientIntensity: 0.4,
-      fogColor: '#1e293b',
-      fogDensity: 0.03
-    }
-  },
-  [StageId.STAGE_5]: {
-    id: StageId.STAGE_5,
-    name: "Void Rift",
-    description: "The final stand where space-time itself begins to unravel.",
-    waves: 35,
-    path: [
-      { x: 0, y: 0.2, z: -10 },
-      { x: 0, y: 0.2, z: 10 },
-      { x: -10, y: 0.2, z: 0 },
-      { x: 10, y: 0.2, z: 0 }
-    ],
-    startingGold: 600,
-    startingLives: 20,
-    enemyScaling: 2.5,
-    bossConfig: { ...BOSS_CONFIGS.sentinel_prime, name: 'HARBINGER', title: 'The Architect of Null', baseHealth: 30000, size: 5, color: '#000000' },
-    unlockRequirement: StageId.STAGE_4,
-    environment: {
-      skyPreset: 'inferno',
-      gridColor: '#450a0a',
-      pathColor: '#7f1d1d',
-      ambientIntensity: 0.2,
-      fogColor: '#450a0a',
-      fogDensity: 0.08
-    }
-  }
-};
+export const MAX_LEVEL = 3;
+export const SELL_REFUND_RATIO = 0.7; 
 
 export const TACTICAL_INTEL_POOL = [
   "Massive heat signatures detected in the sub-sector. Prepare for heavy resistance.",
   "Enemy cloaking tech detected. Scanners are struggling to lock on target.",
-  "Scout reports indicate high-speed units approaching.",
+  "Scout reports indicate high-speed units approaching from the North-East gate.",
   "Atmospheric interference is high. Tower target acquisition might be sluggish.",
   "Energy readings spiking. A high-priority target is leading this assault.",
-  "Armor plating on units is reinforced. Focus on high-damage output.",
+  "Sub-space ripples detected. Expect unconventional movement patterns.",
+  "Armor plating on incoming units is reinforced. Focus on high-damage output.",
+  "Intercepted comms suggest a multi-pronged attack. Watch the mid-path.",
   "Power grid fluctuating. Keep a reserve of gold for emergency deployments.",
-  "The swarm is evolving. Unconventional movement patterns detected.",
+  "Biological signatures mixed with cybernetics. The swarm is evolving.",
+  "Void readings are off the charts. Void Tech towers will perform well here.",
   "Magma Tech is recommended for this wave's heavy armor configuration.",
   "Plasma Tech overclocking is advised to handle the upcoming swarm density.",
+  "Enemy formations are tightly packed. Splash damage will be highly effective.",
+  "Long-range scanners show a breach in the outer perimeter. They're coming.",
+  "Strategic tip: Neighboring towers benefit most from Magma and Plasma auras.",
+  "Warning: Incoming 'Fast' class units. Ensure fire rate is optimized.",
+  "Intelligence reports a 'Tank' unit leading the column. Prepare for a slog.",
+  "Gravity fields are weakening. Void Tech fields may be necessary to compensate.",
+  "Sensors picking up residual radiation. Shielding systems are at 80%.",
+  "The enemy is using recursive logic. Expect sudden speed bursts.",
   "Target the leader. Breaking their formation will slow the remaining units.",
-  "The core must not fall. Hold the line at all costs.",
-  "Warning: Incoming Boss class signature. Prepare all active protocols."
+  "Don't forget to sell underperforming towers. 70% refund is guaranteed.",
+  "System patch event approaching. Strategize for long-term enhancements.",
+  "Aura stacking is the key to holding this sector. Place towers in clusters.",
+  "Incoming transmission: 'The core must not fall. Hold the line at all costs.'",
+  "Seismic activity detected. Ground-based enemies are moving in force.",
+  "Optical sensors are blinded by solar flare. Rely on automated tracking.",
+  "Enemy shields are tuned to high frequencies. Plasma rounds might struggle.",
+  "A heavy boss unit is being assembled at the jump-point. Prepare.",
+  "Low-orbit satellite shows a massive influx of 'Basic' class drones.",
+  "Tactical oversight: Sniper towers are wasted on fast, low-health units.",
+  "Deploy Fast towers at the chokepoints to maximize their fire rate.",
+  "The Magma Eruption protocol is ready. Use it when the path is crowded.",
+  "Time Stop protocol detected in Void Tech. Save it for the fastest units.",
+  "Overclock protocol will drain local heat sinks. Use it during peak waves.",
+  "Scanners indicate a weakness in enemy rear-guard plating.",
+  "Maintain defensive depth. Don't put all your firepower at the start.",
+  "Economic update: Interest rates are high. Save gold if you can afford to.",
+  "The enemy has mapped our static defenses. Consider repositioning.",
+  "Biological swarms are weak to rapid-fire plasma bursts.",
+  "Heavy machinery detected. Kinetic impact (Magma) is the most efficient counter.",
+  "Void resonance is high. Sniper towers gain additional focus here.",
+  "Intercepted: 'Protocol X is in effect. Move all units to the target zone.'",
+  "Sensors are failing. We're going in blind, Commander. Good luck.",
+  "The swarm is learning. They've adjusted their pathing slightly.",
+  "Energy spikes detected in the perimeter towers. Augments are active.",
+  "Intelligence suggests a 'Boss' unit will appear in wave 5 and multiples of 5.",
+  "The final line of defense is holding, but only just. Reinforce the back.",
+  "Tactical Tip: Prioritize 'Strongest' targets with your heavy hitters."
 ];
 
 export const AUGMENT_POOL: Augment[] = [
@@ -213,7 +95,7 @@ export const AUGMENT_POOL: Augment[] = [
   {
     id: 'econ_interest_1',
     name: 'Compound Logic',
-    description: 'Gain 10% interest on gold at end of wave.',
+    description: 'Gain 10% interest on current gold at the end of each wave.',
     rarity: 'RARE',
     type: AugmentType.ECONOMY,
     effect: { value: 0.1, special: 'INTEREST' }
@@ -221,7 +103,7 @@ export const AUGMENT_POOL: Augment[] = [
   {
     id: 'splash_sniper_1',
     name: 'H.E. Munitions',
-    description: 'Sniper rounds deal 50% splash damage.',
+    description: 'Sniper rounds deal 50% splash damage in a small radius.',
     rarity: 'LEGENDARY',
     type: AugmentType.ON_HIT,
     effect: { value: 0.5, target: TowerType.SNIPER, special: 'SPLASH_DAMAGE' }
@@ -234,6 +116,22 @@ export const AUGMENT_POOL: Augment[] = [
     type: AugmentType.STAT_BUFF,
     effect: { stat: 'damage', value: 0.4, target: 'ALL', techTarget: TechPath.MAGMA }
   },
+  {
+    id: 'rate_all_1',
+    name: 'Overclocked Servos',
+    description: '+10% Fire Rate for all towers.',
+    rarity: 'COMMON',
+    type: AugmentType.STAT_BUFF,
+    effect: { stat: 'fireRate', value: 0.1, target: 'ALL' }
+  },
+  {
+    id: 'range_all_1',
+    name: 'Enhanced Uplink',
+    description: '+15% Range for all towers.',
+    rarity: 'COMMON',
+    type: AugmentType.STAT_BUFF,
+    effect: { stat: 'range', value: 0.15, target: 'ALL' }
+  }
 ];
 
 // Ability Configuration
@@ -249,10 +147,10 @@ export const ABILITY_CONFIG = {
     color: '#ef4444'
   },
   [ActiveAbilityType.ORBITAL_STRIKE]: { 
-    damage: 1200, 
+    damage: 1000, // Higher damage for snipers
     range: 4, 
     cooldown: 25000, 
-    color: '#fb7185'
+    color: '#fb7185' // Lighter red
   },
   [ActiveAbilityType.OVERCLOCK]: { 
     multiplier: 3, 
@@ -277,7 +175,7 @@ export const UPGRADE_CONFIG = {
     [TechPath.NONE]: { damage: 1, range: 1, fireRate: 1 },
     [TechPath.MAGMA]: { 
       2: { damage: 2.0, range: 1.0, fireRate: 0.9, passive: PassiveType.DAMAGE_AURA },
-      3: { damage: 4.0, range: 1.1, fireRate: 0.8, active: ActiveAbilityType.ERUPTION }
+      3: { damage: 4.0, range: 1.1, fireRate: 0.8, active: ActiveAbilityType.ERUPTION } // Defaults to Eruption
     },
     [TechPath.PLASMA]: { 
       2: { damage: 0.8, range: 0.9, fireRate: 2.0, passive: PassiveType.RATE_AURA },
