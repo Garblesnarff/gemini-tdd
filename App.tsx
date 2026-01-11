@@ -3,8 +3,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars, Sky, Environment, Float, Text } from '@react-three/drei';
 import * as THREE from 'three';
-import { GameState, Enemy, Tower, Projectile, Effect, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType } from './types';
-import { GRID_SIZE, PATH_WAYPOINTS, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL, TACTICAL_INTEL_POOL } from './constants';
+import { GameState, Enemy, Tower, Projectile, Effect, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType, StageId } from './types';
+import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL, TACTICAL_INTEL_POOL, STAGE_CONFIGS } from './constants';
 import HUD from './components/HUD';
 import Scene from './components/Scene';
 
@@ -12,8 +12,8 @@ const TICK_RATE = 50;
 
 const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>({
-    gold: 400,
-    lives: 20,
+    gold: STAGE_CONFIGS[StageId.STAGE_1].startingGold,
+    lives: STAGE_CONFIGS[StageId.STAGE_1].startingLives,
     wave: 0,
     enemies: [],
     towers: [],
@@ -27,7 +27,18 @@ const App: React.FC = () => {
     activeAugments: [],
     augmentChoices: [],
     isChoosingAugment: false,
-    targetingAbility: null
+    targetingAbility: null,
+    currentStage: StageId.STAGE_1,
+    stageProgress: {
+        [StageId.STAGE_1]: { unlocked: true, completed: false, bestWave: 0, stars: 0 },
+        [StageId.STAGE_2]: { unlocked: false, completed: false, bestWave: 0, stars: 0 },
+        [StageId.STAGE_3]: { unlocked: false, completed: false, bestWave: 0, stars: 0 },
+        [StageId.STAGE_4]: { unlocked: false, completed: false, bestWave: 0, stars: 0 },
+        [StageId.STAGE_5]: { unlocked: false, completed: false, bestWave: 0, stars: 0 },
+    },
+    activeBoss: null,
+    bossAnnouncement: null,
+    gamePhase: 'PLAYING'
   });
 
   const [selectedTowerType, setSelectedTowerType] = useState<TowerType>(TowerType.BASIC);
@@ -48,6 +59,8 @@ const App: React.FC = () => {
         if (prev.gameSpeed === 0 || prev.isGameOver || prev.isChoosingAugment) return prev;
         
         const tickDelta = TICK_RATE * prev.gameSpeed;
+        const currentStageConfig = STAGE_CONFIGS[prev.currentStage];
+        const activePath = currentStageConfig.path;
 
         const nextEnemies = [...prev.enemies];
         const nextProjectiles = [...prev.projectiles];
@@ -128,8 +141,11 @@ const App: React.FC = () => {
              });
           }
           if (speedMultiplier === 0) continue;
-          const currentWaypoint = PATH_WAYPOINTS[enemy.pathIndex];
-          const nextWaypoint = PATH_WAYPOINTS[enemy.pathIndex + 1];
+          
+          // Use dynamic stage path
+          const currentWaypoint = activePath[enemy.pathIndex];
+          const nextWaypoint = activePath[enemy.pathIndex + 1];
+          
           if (!nextWaypoint) {
             nextLives -= 1;
             nextEnemies.splice(i, 1);
@@ -281,6 +297,8 @@ const App: React.FC = () => {
   };
 
   const performWaveStart = (waveNum: number) => {
+    const currentStageConfig = STAGE_CONFIGS[gameState.currentStage];
+    
     // 1. Instantly pick a message from the local pool
     const randomMsg = TACTICAL_INTEL_POOL[Math.floor(Math.random() * TACTICAL_INTEL_POOL.length)];
 
@@ -304,9 +322,13 @@ const App: React.FC = () => {
                           waveNum > 3 && Math.random() > 0.7 ? EnemyType.FAST :
                           waveNum > 6 && Math.random() > 0.8 ? EnemyType.TANK : EnemyType.BASIC;
           const stats = ENEMY_STATS[enemyType];
+          
+          // Use Stage Path Start
+          const startPos = currentStageConfig.path[0];
+          
           const newEnemy: Enemy = {
             id: Math.random().toString(), type: enemyType, health: stats.health * (1 + waveNum * 0.1),
-            maxHealth: stats.health * (1 + waveNum * 0.1), speed: stats.speed, position: { ...PATH_WAYPOINTS[0] },
+            maxHealth: stats.health * (1 + waveNum * 0.1), speed: stats.speed, position: { ...startPos },
             pathIndex: 0, progress: 0
           };
           return { ...prev, enemies: [...prev.enemies, newEnemy], waveStatus: i === spawnCount - 1 ? 'CLEARING' : 'SPAWNING' };
@@ -501,14 +523,21 @@ const App: React.FC = () => {
       if (gameState.gold < stats.cost) return;
       const exists = gameState.towers.some(t => Math.abs(t.position.x - pos.x) < 0.5 && Math.abs(t.position.z - pos.z) < 0.5);
       if (exists) return;
-      const onPath = PATH_WAYPOINTS.some((wp, idx) => {
-        if (idx === PATH_WAYPOINTS.length - 1) return false;
-        const next = PATH_WAYPOINTS[idx + 1];
+      
+      // Dynamic Path Collision Detection
+      const currentStageConfig = STAGE_CONFIGS[gameState.currentStage];
+      const activePath = currentStageConfig.path;
+      
+      const onPath = activePath.some((wp, idx) => {
+        if (idx === activePath.length - 1) return false;
+        const next = activePath[idx + 1];
+        // Create bounding box for path segment
         const minX = Math.min(wp.x, next.x) - 0.8; const maxX = Math.max(wp.x, next.x) + 0.8;
         const minZ = Math.min(wp.z, next.z) - 0.8; const maxZ = Math.max(wp.z, next.z) + 0.8;
         return pos.x >= minX && pos.x <= maxX && pos.z >= minZ && pos.z <= maxZ;
       });
       if (onPath) return;
+      
       setPendingPlacement(pos);
   };
 
@@ -557,15 +586,12 @@ const App: React.FC = () => {
         const newBaseRange = baseStats.range * modifiers.range;
         const newPassive = modifiers.passive || tower.passiveType;
         
-        // --- LOGIC TO SPLIT ABILITIES BASED ON TOWER TYPE ---
         let newActive = modifiers.active || tower.activeType;
         if (newActive === ActiveAbilityType.ERUPTION) {
-           // If it's a sniper, upgrade to Orbital Strike instead of base Eruption
            if (tower.type === TowerType.SNIPER) {
                newActive = ActiveAbilityType.ORBITAL_STRIKE;
            }
         }
-        // ----------------------------------------------------
 
         let maxCd = 0; if (newActive !== ActiveAbilityType.NONE) {
             // @ts-ignore
@@ -601,12 +627,17 @@ const App: React.FC = () => {
   const setGameSpeed = (speed: number) => setGameState(prev => ({ ...prev, gameSpeed: speed }));
 
   const resetGame = () => {
-    setGameState({
-      gold: 400, lives: 20, wave: 0, enemies: [], towers: [], projectiles: [], effects: [],
+    // Reset to initial state of current stage
+    const currentConfig = STAGE_CONFIGS[gameState.currentStage];
+    setGameState(prev => ({
+      ...prev,
+      gold: currentConfig.startingGold, 
+      lives: currentConfig.startingLives, 
+      wave: 0, enemies: [], towers: [], projectiles: [], effects: [],
       gameSpeed: 1, isGameOver: false, waveStatus: 'IDLE', waveIntel: 'Ready for deployment, Commander.',
       selectedTowerId: null, activeAugments: [], augmentChoices: [], isChoosingAugment: false,
-      targetingAbility: null
-    });
+      targetingAbility: null, activeBoss: null, bossAnnouncement: null
+    }));
     setPendingPlacement(null);
   };
 
@@ -618,7 +649,8 @@ const App: React.FC = () => {
             onPlaceTower={handleGridClick} 
             onSelectTower={handleSelectTower} 
             selectedTowerType={selectedTowerType} 
-            pendingPlacement={pendingPlacement} 
+            pendingPlacement={pendingPlacement}
+            path={STAGE_CONFIGS[gameState.currentStage].path} 
         />
         <OrbitControls makeDefault maxPolarAngle={Math.PI / 2.2} minDistance={5} maxDistance={30} />
       </Canvas>

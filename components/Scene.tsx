@@ -4,7 +4,7 @@ import { useFrame } from '@react-three/fiber';
 import { Stars, Sky, Environment, Box, Cylinder, Sphere, Float, Sparkles, Icosahedron, Ring, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { GameState, TowerType, Vector3Tuple, EnemyType, Tower, Enemy, TechPath, Effect, PassiveType, ActiveAbilityType } from '../types';
-import { PATH_WAYPOINTS, GRID_SIZE, TOWER_STATS, ENEMY_STATS, TECH_PATH_INFO, ABILITY_CONFIG } from '../constants';
+import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, TECH_PATH_INFO, ABILITY_CONFIG } from '../constants';
 
 interface SceneProps {
   gameState: GameState;
@@ -12,6 +12,7 @@ interface SceneProps {
   onSelectTower: (id: string | null) => void;
   selectedTowerType: TowerType;
   pendingPlacement: Vector3Tuple | null;
+  path: Vector3Tuple[];
 }
 
 // --- VISUAL ASSETS ---
@@ -411,7 +412,7 @@ const TargetingReticle: React.FC<{ position: Vector3Tuple, type: ActiveAbilityTy
     );
 };
 
-const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, selectedTowerType, pendingPlacement }) => {
+const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, selectedTowerType, pendingPlacement, path }) => {
   const [hoveredPos, setHoveredPos] = useState<Vector3Tuple | null>(null);
 
   // If we have a pending placement, force the ghost to be there
@@ -459,13 +460,13 @@ const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, s
       
       <gridHelper args={[GRID_SIZE * 2, GRID_SIZE * 2, 0x1e293b, 0x334155]} position={[0, 0.01, 0]} />
 
-      {/* Path */}
-      {PATH_WAYPOINTS.map((wp, i) => {
-        if (i === PATH_WAYPOINTS.length - 1) return null;
-        const next = PATH_WAYPOINTS[i + 1];
+      {/* Dynamic Path Rendering */}
+      {path.map((wp, i) => {
+        if (i === path.length - 1) return null;
+        const next = path[i + 1];
         const dx = next.x - wp.x;
         const dz = next.z - wp.z;
-        const length = Math.sqrt(dx * dx + dz * dz) + 1;
+        const length = Math.sqrt(dx * dx + dz * dz) + 1; // +1 to overlap slightly at corners
         const centerX = (wp.x + next.x) / 2;
         const centerZ = (wp.z + next.z) / 2;
         const angle = Math.atan2(dx, dz);

@@ -1,7 +1,9 @@
 
-import { TowerType, EnemyType, TechPath, PassiveType, ActiveAbilityType, Augment, AugmentType } from './types';
+import { TowerType, EnemyType, TechPath, PassiveType, ActiveAbilityType, Augment, AugmentType, StageId, StageConfig, BossConfig, BossAbilityType, Vector3Tuple } from './types';
 
 export const GRID_SIZE = 12;
+
+// DEPRECATED - Use STAGE_CONFIGS[currentStage].path instead
 export const PATH_WAYPOINTS = [
   { x: -5, y: 0.2, z: -5 },
   { x: 5, y: 0.2, z: -5 },
@@ -10,6 +12,63 @@ export const PATH_WAYPOINTS = [
   { x: -5, y: 0.2, z: 5 },
   { x: 5, y: 0.2, z: 5 },
 ];
+
+const STAGE_1_PATH: Vector3Tuple[] = [
+  { x: -6, y: 0.2, z: -6 },
+  { x: -6, y: 0.2, z: -2 },
+  { x: 0, y: 0.2, z: -2 },
+  { x: 0, y: 0.2, z: 2 },
+  { x: 6, y: 0.2, z: 2 },
+  { x: 6, y: 0.2, z: 6 }
+];
+
+const STAGE_1_BOSS: BossConfig = {
+  id: 'sentinel_prime',
+  name: 'SENTINEL PRIME',
+  title: 'Guardian of the Forward Base',
+  baseHealth: 5000,
+  speed: 0.5,
+  size: 2.5,
+  color: '#f97316', // Orange
+  phases: [
+    { healthThreshold: 1.0, speedMultiplier: 1.0, damageResistance: 0, announcement: "TARGET ACQUIRED: SENTINEL PRIME", visualChange: 'unstable' }, 
+    { healthThreshold: 0.75, speedMultiplier: 1.2, damageResistance: 0.1, announcement: "SYSTEMS ACCELERATING", visualChange: 'enraged' },
+    { healthThreshold: 0.50, speedMultiplier: 1.0, damageResistance: 0.25, announcement: "SHIELD GENERATOR ONLINE", visualChange: 'shielded', abilityUnlock: 'shield_pulse' },
+    { healthThreshold: 0.25, speedMultiplier: 1.5, damageResistance: 0, announcement: "CRITICAL DAMAGE DETECTED", visualChange: 'unstable' }
+  ],
+  abilities: [
+    { id: 'spawn_minions', name: 'Reinforcements', type: BossAbilityType.SPAWN_MINIONS, cooldown: 15000 },
+    { id: 'shield_pulse', name: 'Shield Pulse', type: BossAbilityType.SHIELD_PULSE, cooldown: 20000, duration: 3000 }
+  ],
+  minionSpawns: [
+    { triggerHealth: 0.6, enemyType: EnemyType.BASIC, count: 5, announcement: "Minions deployed" },
+    { triggerHealth: 0.3, enemyType: EnemyType.FAST, count: 8, announcement: "Fast units incoming" }
+  ]
+};
+
+export const STAGE_CONFIGS: Record<StageId, StageConfig> = {
+  [StageId.STAGE_1]: {
+    id: StageId.STAGE_1,
+    name: "Forward Base",
+    description: "The outer perimeter of the Gemini sector. Enemy resistance is expected to be linear but persistent.",
+    waves: 25,
+    path: STAGE_1_PATH,
+    startingGold: 400,
+    startingLives: 20,
+    enemyScaling: 1.0,
+    bossConfig: STAGE_1_BOSS,
+    environment: {
+      skyPreset: "night",
+      gridColor: "#0f172a",
+      pathColor: "#334155",
+      ambientIntensity: 0.5
+    }
+  },
+  [StageId.STAGE_2]: { id: StageId.STAGE_2, name: "Locked", description: "Complete Stage 1 to unlock.", waves: 0, path: [], startingGold: 0, startingLives: 0, enemyScaling: 0, bossConfig: STAGE_1_BOSS, environment: { skyPreset: "sunset", gridColor: "#000", pathColor: "#fff", ambientIntensity: 1 }},
+  [StageId.STAGE_3]: { id: StageId.STAGE_3, name: "Locked", description: "Complete Stage 2 to unlock.", waves: 0, path: [], startingGold: 0, startingLives: 0, enemyScaling: 0, bossConfig: STAGE_1_BOSS, environment: { skyPreset: "sunset", gridColor: "#000", pathColor: "#fff", ambientIntensity: 1 }},
+  [StageId.STAGE_4]: { id: StageId.STAGE_4, name: "Locked", description: "Complete Stage 3 to unlock.", waves: 0, path: [], startingGold: 0, startingLives: 0, enemyScaling: 0, bossConfig: STAGE_1_BOSS, environment: { skyPreset: "sunset", gridColor: "#000", pathColor: "#fff", ambientIntensity: 1 }},
+  [StageId.STAGE_5]: { id: StageId.STAGE_5, name: "Locked", description: "Complete Stage 4 to unlock.", waves: 0, path: [], startingGold: 0, startingLives: 0, enemyScaling: 0, bossConfig: STAGE_1_BOSS, environment: { skyPreset: "sunset", gridColor: "#000", pathColor: "#fff", ambientIntensity: 1 }},
+};
 
 export const MAX_LEVEL = 3;
 export const SELL_REFUND_RATIO = 0.7; 
