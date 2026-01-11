@@ -1,5 +1,5 @@
 
-import { TowerType, EnemyType, TechPath, PassiveType, ActiveAbilityType, Augment, AugmentType, StageId, StageConfig, BossConfig, BossAbilityType, Vector3Tuple } from './types';
+import { TowerType, EnemyType, TechPath, PassiveType, ActiveAbilityType, Augment, AugmentType, StageId, StageConfig, BossConfig, BossAbilityType, Vector3Tuple, WaveDefinition, WaveGroup } from './types';
 
 export const GRID_SIZE = 12;
 
@@ -51,7 +51,7 @@ export const STAGE_CONFIGS: Record<StageId, StageConfig> = {
     id: StageId.STAGE_1,
     name: "Forward Base",
     description: "The outer perimeter of the Gemini sector. Enemy resistance is expected to be linear but persistent.",
-    waves: 25,
+    waves: 26, // 25 Normal + 1 Boss
     path: STAGE_1_PATH,
     startingGold: 400,
     startingLives: 20,
@@ -72,6 +72,89 @@ export const STAGE_CONFIGS: Record<StageId, StageConfig> = {
 
 export const MAX_LEVEL = 3;
 export const SELL_REFUND_RATIO = 0.7; 
+
+// --- WAVE DEFINITIONS ---
+
+export const getWaveDefinition = (stageId: StageId, waveNumber: number): WaveDefinition => {
+    // Stage 1 Specific Definitions
+    if (stageId === StageId.STAGE_1) {
+        const groups: WaveGroup[] = [];
+        let intel = "";
+
+        // Waves 1-5: Introduction (Basic)
+        if (waveNumber <= 5) {
+            const count = waveNumber === 1 ? 5 : waveNumber === 2 ? 7 : waveNumber === 3 ? 8 : waveNumber === 4 ? 10 : 12;
+            groups.push({ type: EnemyType.BASIC, count, interval: 1000 - (waveNumber * 50) });
+            if (waveNumber === 1) intel = "Small scout group detected. Test your defenses.";
+            else if (waveNumber === 5) intel = "Large group of basic units. Augment protocol available after this wave.";
+        }
+        // Waves 6-10: Fast Enemies Introduced
+        else if (waveNumber <= 10) {
+            const basicCount = 8 + (waveNumber - 6); // 8, 9, 10, 11, 12... 
+            const fastCount = waveNumber === 6 ? 3 : waveNumber === 7 ? 4 : waveNumber === 8 ? 6 : waveNumber === 9 ? 5 : 8;
+            groups.push({ type: EnemyType.BASIC, count: basicCount, interval: 900 });
+            groups.push({ type: EnemyType.FAST, count: fastCount, interval: 600, wait: 2000 });
+            
+            if (waveNumber === 6) intel = "Fast movers incoming. High fire rate recommended.";
+            else if (waveNumber === 10) intel = "Mixed unit tactics detected. Hold the line for reinforcements.";
+        }
+        // Waves 11-15: Tanks Introduced
+        else if (waveNumber <= 15) {
+            const basicCount = waveNumber === 14 ? 15 : 10 + (waveNumber % 2) * 2; 
+            const fastCount = waveNumber === 13 ? 10 : 5 + (waveNumber - 10);
+            const tankCount = waveNumber === 11 ? 1 : waveNumber === 12 ? 2 : waveNumber === 13 ? 2 : waveNumber === 14 ? 3 : 3;
+            
+            groups.push({ type: EnemyType.BASIC, count: basicCount, interval: 800 });
+            groups.push({ type: EnemyType.FAST, count: fastCount, interval: 500, wait: 2000 });
+            groups.push({ type: EnemyType.TANK, count: tankCount, interval: 3000, wait: 5000 });
+            
+            if (waveNumber === 11) intel = "Heavy armor signature confirmed. Tank unit approaching.";
+            else if (waveNumber === 15) intel = "Multiple heavy units detected. Prepare for sustained fire.";
+        }
+        // Waves 16-20: Escalation
+        else if (waveNumber <= 20) {
+            groups.push({ type: EnemyType.BASIC, count: 15 + (waveNumber - 15) * 2, interval: 700 });
+            groups.push({ type: EnemyType.FAST, count: 5 + (waveNumber - 15), interval: 400, wait: 2000 });
+            groups.push({ type: EnemyType.TANK, count: 2 + Math.floor((waveNumber - 15)/2), interval: 2500, wait: 4000 });
+            
+            if (waveNumber === 20) {
+                // Mini-boss wave
+                groups.push({ type: EnemyType.TANK, count: 5, interval: 1500, wait: 10000 });
+                intel = "Armored column detected. High damage output required.";
+            } else {
+                 intel = "Enemy intensity increasing. Check your upgrade paths.";
+            }
+        }
+        // Waves 21-25: Gauntlet
+        else if (waveNumber <= 25) {
+            const scale = waveNumber - 20; // 1 to 5
+            groups.push({ type: EnemyType.BASIC, count: 20 + scale * 5, interval: 500 });
+            groups.push({ type: EnemyType.FAST, count: 10 + scale * 2, interval: 300, wait: 3000 });
+            groups.push({ type: EnemyType.TANK, count: scale * 2, interval: 2000, wait: 5000 });
+            
+            if (waveNumber === 25) intel = "MASSIVE WAVE DETECTED. Prepare for the Guardian.";
+            else intel = "They are throwing everything at us. Hold fast!";
+        }
+        else {
+             // Fallback
+             groups.push({ type: EnemyType.BASIC, count: 5, interval: 1000 });
+        }
+        
+        // If no specific intel, pick random
+        if (!intel) {
+            intel = TACTICAL_INTEL_POOL[Math.floor(Math.random() * TACTICAL_INTEL_POOL.length)];
+        }
+
+        return { composition: groups, intel };
+    }
+    
+    // Fallback for other stages (random gen for now)
+    const baseCount = 5 + waveNumber * 2;
+    return {
+        composition: [{ type: EnemyType.BASIC, count: baseCount, interval: 800 }],
+        intel: "Standard resistance expected."
+    };
+};
 
 export const TACTICAL_INTEL_POOL = [
   "Massive heat signatures detected in the sub-sector. Prepare for heavy resistance.",

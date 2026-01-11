@@ -4,7 +4,7 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars, Sky, Environment, Float, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { GameState, Enemy, Tower, Projectile, Effect, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType, StageId, Boss } from './types';
-import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL, TACTICAL_INTEL_POOL, STAGE_CONFIGS } from './constants';
+import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL, STAGE_CONFIGS, getWaveDefinition } from './constants';
 import HUD from './components/HUD';
 import Scene from './components/Scene';
 
@@ -306,13 +306,17 @@ const App: React.FC = () => {
     const nextWaveNum = gameState.wave + 1;
     const stageConfig = STAGE_CONFIGS[gameState.currentStage];
 
-    // Check for Final Boss Wave
+    // Check for Final Boss Wave (Wave 26 in this configuration)
     if (nextWaveNum === stageConfig.waves) {
         triggerBossIntro();
         return;
     }
-
-    if (nextWaveNum % 5 === 0 && nextWaveNum > 0) {
+    
+    // Check if we just completed a multiple of 5 waves (5, 10, 15...) to show augment menu BEFORE starting the next wave
+    // logic: we are about to start nextWaveNum. If (nextWaveNum - 1) % 5 === 0, it means we just finished wave 5, 10, etc.
+    // Except wave 0 -> start wave 1 (0%5==0 but we check >0).
+    // Example: Finished Wave 5. wave=5. nextWaveNum=6. (6-1)%5 == 0. Correct.
+    if ((nextWaveNum - 1) % 5 === 0 && (nextWaveNum - 1) > 0) {
         const shuffled = [...AUGMENT_POOL].sort(() => 0.5 - Math.random());
         const choices = shuffled.slice(0, 3);
         setGameState(prev => ({
@@ -328,45 +332,69 @@ const App: React.FC = () => {
   };
 
   const performWaveStart = (waveNum: number) => {
-    const currentStageConfig = STAGE_CONFIGS[gameState.currentStage];
+    const stageId = gameState.currentStage;
+    const waveDefinition = getWaveDefinition(stageId, waveNum);
+    const stageConfig = STAGE_CONFIGS[stageId];
     
-    // 1. Instantly pick a message from the local pool
-    const randomMsg = TACTICAL_INTEL_POOL[Math.floor(Math.random() * TACTICAL_INTEL_POOL.length)];
-
-    // 2. Immediately update state to start the wave visually
     setGameState(prev => ({ 
       ...prev, 
       wave: waveNum, 
       waveStatus: 'SPAWNING', 
-      waveIntel: randomMsg 
+      waveIntel: waveDefinition.intel || "Incoming hostiles." 
     }));
 
-    // 3. Start enemy spawning sequence immediately
-    const spawnCount = 5 + waveNum * 2;
-    const baseInterval = 1000 - Math.min(waveNum * 50, 600);
-    
-    for (let i = 0; i < spawnCount; i++) {
-      setTimeout(() => {
-        if (gameStateRef.current.isGameOver) return;
-        setGameState(prev => {
-          // Standard enemies only, boss is handled separately for final wave
-          const enemyType = waveNum % 5 === 0 && i === spawnCount - 1 ? EnemyType.TANK : // Mini-boss tank instead of full boss
-                          waveNum > 3 && Math.random() > 0.7 ? EnemyType.FAST :
-                          waveNum > 6 && Math.random() > 0.8 ? EnemyType.TANK : EnemyType.BASIC;
-          const stats = ENEMY_STATS[enemyType];
-          
-          // Use Stage Path Start
-          const startPos = currentStageConfig.path[0];
-          
-          const newEnemy: Enemy = {
-            id: Math.random().toString(), type: enemyType, health: stats.health * (1 + waveNum * 0.1),
-            maxHealth: stats.health * (1 + waveNum * 0.1), speed: stats.speed, position: { ...startPos },
-            pathIndex: 0, progress: 0
-          };
-          return { ...prev, enemies: [...prev.enemies, newEnemy], waveStatus: i === spawnCount - 1 ? 'CLEARING' : 'SPAWNING' };
-        });
-      }, i * baseInterval);
-    }
+    // Process all groups in the composition
+    let globalDelayOffset = 0;
+
+    waveDefinition.composition.forEach(group => {
+        const { type, count, interval, wait } = group;
+        
+        // Add wait time before this group starts spawning (serial groups)
+        if (wait) globalDelayOffset += wait;
+        
+        for (let i = 0; i < count; i++) {
+            const spawnDelay = globalDelayOffset + (i * interval);
+            
+            setTimeout(() => {
+                if (gameStateRef.current.isGameOver) return;
+                
+                setGameState(prev => {
+                    const stats = ENEMY_STATS[type];
+                    const startPos = stageConfig.path[0];
+                    const scaledHealth = stats.health * (1 + (waveNum * 0.1)) * stageConfig.enemyScaling;
+                    
+                    const newEnemy: Enemy = {
+                        id: Math.random().toString(), 
+                        type: type, 
+                        health: scaledHealth,
+                        maxHealth: scaledHealth, 
+                        speed: stats.speed, 
+                        position: { ...startPos },
+                        pathIndex: 0, 
+                        progress: 0
+                    };
+                    
+                    // Check if this is the absolute last enemy of the entire wave definition to switch to CLEARING
+                    // This is a bit tricky with timeouts. Simplification: Set status to spawning until the last one triggers.
+                    // Actually, waveStatus 'SPAWNING' -> 'CLEARING' transition is usually done when spawn queue is empty?
+                    // In the interval loop, we check for 'CLEARING' & enemies==0. 
+                    // We need to set 'CLEARING' after the last spawn is dispatched.
+                    
+                    return { ...prev, enemies: [...prev.enemies, newEnemy] };
+                });
+            }, spawnDelay);
+        }
+        
+        // Advance global offset by the total time this group takes to spawn, so next group starts after
+        globalDelayOffset += (count * interval);
+    });
+
+    // Set status to CLEARING after the last enemy spawns
+    setTimeout(() => {
+         if (!gameStateRef.current.isGameOver) {
+             setGameState(prev => ({ ...prev, waveStatus: 'CLEARING' }));
+         }
+    }, globalDelayOffset);
   };
 
   const triggerBossIntro = () => {

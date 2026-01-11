@@ -225,18 +225,16 @@ export interface Boss extends Enemy {
   disabledZone?: { position: Vector3Tuple; radius: number; duration: number };
 }
 
-export interface WaveEnemy {
+export interface WaveGroup {
   type: EnemyType;
   count: number;
-  healthMultiplier?: number;
-  speedMultiplier?: number;
-  spawnDelay: number;
+  interval: number; // ms between units
+  wait?: number; // ms to wait before starting this group
 }
 
 export interface WaveDefinition {
-  enemies: WaveEnemy[];
-  spawnInterval: number;
-  bonusGold?: number;
+  composition: WaveGroup[];
+  intel?: string; 
 }
 
 export interface GameState {
