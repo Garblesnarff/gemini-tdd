@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars, Sky, Environment, Float, Text } from '@react-three/drei';
 import * as THREE from 'three';
-import { GameState, Enemy, Tower, Projectile, Effect, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType, StageId } from './types';
+import { GameState, Enemy, Tower, Projectile, Effect, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType, StageId, Boss } from './types';
 import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL, TACTICAL_INTEL_POOL, STAGE_CONFIGS } from './constants';
 import HUD from './components/HUD';
 import Scene from './components/Scene';
@@ -38,7 +38,7 @@ const App: React.FC = () => {
     },
     activeBoss: null,
     bossAnnouncement: null,
-    gamePhase: 'PLAYING'
+    gamePhase: 'MENU' // Start in Menu
   });
 
   const [selectedTowerType, setSelectedTowerType] = useState<TowerType>(TowerType.BASIC);
@@ -52,6 +52,8 @@ const App: React.FC = () => {
 
   // Main Game Loop Logic
   useEffect(() => {
+    // Only run loop in active gameplay phases
+    if (gameState.gamePhase !== 'PLAYING' && gameState.gamePhase !== 'BOSS_FIGHT') return;
     if (gameState.isGameOver) return;
 
     const interval = setInterval(() => {
@@ -69,6 +71,8 @@ const App: React.FC = () => {
         let nextGold = prev.gold;
         let nextLives = prev.lives;
         let nextStatus = prev.waveStatus;
+        let nextPhase = prev.gamePhase;
+        let nextStageProgress = { ...prev.stageProgress };
 
         // --- STEP 1: CALCULATE TOWER STATS (PASSIVES, ACTIVES, AUGMENTS) ---
         nextTowers.forEach(t => {
@@ -251,27 +255,47 @@ const App: React.FC = () => {
             if (nextEffects[i].lifetime <= 0) nextEffects.splice(i, 1);
         }
 
-        // --- STEP 6: WAVE COMPLETE (Economy Augments) ---
+        // --- STEP 6: WAVE COMPLETE (Economy Augments) & STAGE VICTORY CHECK ---
         if (nextStatus === 'CLEARING' && nextEnemies.length === 0) {
-          nextStatus = 'IDLE';
-          prev.activeAugments.forEach(aug => {
-             if (aug.type === AugmentType.ECONOMY && aug.effect.special === 'INTEREST') {
-                nextGold += Math.floor(nextGold * aug.effect.value);
-             }
-          });
+          if (prev.gamePhase === 'BOSS_FIGHT' && nextLives > 0) {
+              // Boss Defeated
+              nextPhase = 'STAGE_COMPLETE';
+              nextStatus = 'IDLE';
+              
+              // Unlock next stage
+              const stages = Object.keys(STAGE_CONFIGS);
+              const currentIdx = stages.indexOf(prev.currentStage);
+              nextStageProgress[prev.currentStage] = { ...nextStageProgress[prev.currentStage], completed: true, stars: nextLives >= 20 ? 3 : nextLives >= 10 ? 2 : 1 };
+              
+              if (currentIdx < stages.length - 1) {
+                  const nextStageId = stages[currentIdx + 1] as StageId;
+                  nextStageProgress[nextStageId] = { ...nextStageProgress[nextStageId], unlocked: true };
+              }
+          } else {
+              nextStatus = 'IDLE';
+              prev.activeAugments.forEach(aug => {
+                 if (aug.type === AugmentType.ECONOMY && aug.effect.special === 'INTEREST') {
+                    nextGold += Math.floor(nextGold * aug.effect.value);
+                 }
+              });
+          }
         }
 
         let nextGameOver = prev.isGameOver;
-        if (nextLives <= 0) nextGameOver = true;
+        if (nextLives <= 0) {
+            nextGameOver = true;
+            nextPhase = 'GAME_OVER';
+        }
 
         return {
           ...prev, enemies: nextEnemies, projectiles: nextProjectiles, towers: nextTowers,
-          effects: nextEffects, gold: nextGold, lives: nextLives, waveStatus: nextStatus, isGameOver: nextGameOver
+          effects: nextEffects, gold: nextGold, lives: nextLives, waveStatus: nextStatus, isGameOver: nextGameOver,
+          gamePhase: nextPhase, stageProgress: nextStageProgress
         };
       });
     }, TICK_RATE);
     return () => clearInterval(interval);
-  }, [gameState.isGameOver]);
+  }, [gameState.isGameOver, gameState.gamePhase]);
 
   const startNextWave = async () => {
     if (gameState.waveStatus !== 'IDLE' || gameState.isChoosingAugment) return;
@@ -280,6 +304,13 @@ const App: React.FC = () => {
     setPendingPlacement(null);
 
     const nextWaveNum = gameState.wave + 1;
+    const stageConfig = STAGE_CONFIGS[gameState.currentStage];
+
+    // Check for Final Boss Wave
+    if (nextWaveNum === stageConfig.waves) {
+        triggerBossIntro();
+        return;
+    }
 
     if (nextWaveNum % 5 === 0 && nextWaveNum > 0) {
         const shuffled = [...AUGMENT_POOL].sort(() => 0.5 - Math.random());
@@ -318,7 +349,8 @@ const App: React.FC = () => {
       setTimeout(() => {
         if (gameStateRef.current.isGameOver) return;
         setGameState(prev => {
-          const enemyType = waveNum % 5 === 0 && i === spawnCount - 1 ? EnemyType.BOSS :
+          // Standard enemies only, boss is handled separately for final wave
+          const enemyType = waveNum % 5 === 0 && i === spawnCount - 1 ? EnemyType.TANK : // Mini-boss tank instead of full boss
                           waveNum > 3 && Math.random() > 0.7 ? EnemyType.FAST :
                           waveNum > 6 && Math.random() > 0.8 ? EnemyType.TANK : EnemyType.BASIC;
           const stats = ENEMY_STATS[enemyType];
@@ -335,6 +367,50 @@ const App: React.FC = () => {
         });
       }, i * baseInterval);
     }
+  };
+
+  const triggerBossIntro = () => {
+      const config = STAGE_CONFIGS[gameStateRef.current.currentStage].bossConfig;
+      setGameState(prev => ({
+          ...prev,
+          gamePhase: 'BOSS_INTRO',
+          bossAnnouncement: config.name,
+          wave: prev.wave + 1,
+          selectedTowerId: null,
+          targetingAbility: null
+      }));
+      setPendingPlacement(null);
+      
+      setTimeout(() => startBossFight(), 3000);
+  };
+
+  const startBossFight = () => {
+      const config = STAGE_CONFIGS[gameStateRef.current.currentStage].bossConfig;
+      const startPos = STAGE_CONFIGS[gameStateRef.current.currentStage].path[0];
+      
+      const boss: Boss = {
+          id: 'BOSS_PRIME',
+          type: EnemyType.BOSS,
+          health: config.baseHealth,
+          maxHealth: config.baseHealth,
+          speed: config.speed,
+          position: { ...startPos },
+          pathIndex: 0,
+          progress: 0,
+          isBoss: true,
+          bossConfig: config,
+          currentPhase: 0,
+          abilityCooldowns: {},
+          isShielded: false
+      };
+
+      setGameState(prev => ({
+          ...prev,
+          gamePhase: 'BOSS_FIGHT',
+          enemies: [boss],
+          waveStatus: 'CLEARING', // Waiting for boss death
+          waveIntel: `WARNING: ${config.title} detected!`
+      }));
   };
 
   const handlePickAugment = (augment: Augment) => {
@@ -626,20 +702,39 @@ const App: React.FC = () => {
 
   const setGameSpeed = (speed: number) => setGameState(prev => ({ ...prev, gameSpeed: speed }));
 
-  const resetGame = () => {
-    // Reset to initial state of current stage
-    const currentConfig = STAGE_CONFIGS[gameState.currentStage];
+  // Transitions
+  const goToMenu = () => setGameState(prev => ({ ...prev, gamePhase: 'MENU' }));
+  const goToStageSelect = () => setGameState(prev => ({ ...prev, gamePhase: 'STAGE_SELECT' }));
+  
+  const startStage = (stageId: StageId) => {
+    const config = STAGE_CONFIGS[stageId];
     setGameState(prev => ({
       ...prev,
-      gold: currentConfig.startingGold, 
-      lives: currentConfig.startingLives, 
-      wave: 0, enemies: [], towers: [], projectiles: [], effects: [],
-      gameSpeed: 1, isGameOver: false, waveStatus: 'IDLE', waveIntel: 'Ready for deployment, Commander.',
-      selectedTowerId: null, activeAugments: [], augmentChoices: [], isChoosingAugment: false,
-      targetingAbility: null, activeBoss: null, bossAnnouncement: null
+      gold: config.startingGold,
+      lives: config.startingLives,
+      wave: 0,
+      enemies: [],
+      towers: [],
+      projectiles: [],
+      effects: [],
+      gameSpeed: 1,
+      isGameOver: false,
+      waveStatus: 'IDLE',
+      waveIntel: 'Ready for deployment, Commander.',
+      selectedTowerId: null,
+      activeAugments: [],
+      augmentChoices: [],
+      isChoosingAugment: false,
+      targetingAbility: null,
+      currentStage: stageId,
+      gamePhase: 'PLAYING',
+      activeBoss: null,
+      bossAnnouncement: null
     }));
     setPendingPlacement(null);
   };
+
+  const resetGame = () => startStage(gameState.currentStage);
 
   return (
     <div className="w-full h-full bg-slate-900 text-white font-sans overflow-hidden">
@@ -652,7 +747,7 @@ const App: React.FC = () => {
             pendingPlacement={pendingPlacement}
             path={STAGE_CONFIGS[gameState.currentStage].path} 
         />
-        <OrbitControls makeDefault maxPolarAngle={Math.PI / 2.2} minDistance={5} maxDistance={30} />
+        <OrbitControls makeDefault maxPolarAngle={Math.PI / 2.2} minDistance={5} maxDistance={30} enabled={gameState.gamePhase === 'PLAYING' || gameState.gamePhase === 'BOSS_FIGHT'} />
       </Canvas>
 
       <HUD 
@@ -662,15 +757,10 @@ const App: React.FC = () => {
         onConfirmPlacement={handleConfirmPlacement} onCancelPlacement={handleCancelPlacement} onUpdatePriority={handleUpdatePriority}
         onPickAugment={handlePickAugment}
         onBatchTrigger={handleBatchTriggerAbility}
+        onGoToMenu={goToMenu}
+        onGoToStageSelect={goToStageSelect}
+        onStartStage={startStage}
       />
-
-      {gameState.isGameOver && (
-        <div className="fixed inset-0 bg-black/80 flex flex-col items-center justify-center z-50">
-          <h1 className="text-6xl font-bold text-red-500 mb-4 tracking-tighter">DEFEAT</h1>
-          <p className="text-xl text-slate-400 mb-8">Wave reached: {gameState.wave}</p>
-          <button onClick={resetGame} className="px-8 py-3 bg-red-600 hover:bg-red-700 text-white rounded-full font-bold transition-all transform hover:scale-105">REDEPLOY</button>
-        </div>
-      )}
     </div>
   );
 };
