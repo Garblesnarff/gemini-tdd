@@ -2,7 +2,7 @@
 import React, { useMemo } from 'react';
 import { GameState, TowerType, TechPath, ActiveAbilityType, TargetPriority, Vector3Tuple, Augment, StageId } from '../types';
 import { TOWER_STATS, TECH_PATH_INFO, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, STAGE_CONFIGS } from '../constants';
-import { Heart, Coins, Swords, Shield, Zap, Info, ChevronRight, RefreshCcw, Radio, Eye, X, ArrowUpCircle, Check, Play, Pause, FastForward, Trash2, Crosshair, Target, Cpu, Flame, Snowflake, Ghost, Bomb, Lock, Star, Map } from 'lucide-react';
+import { Heart, Coins, Swords, Shield, Zap, Info, ChevronRight, RefreshCcw, Radio, Eye, X, ArrowUpCircle, Check, Play, Pause, FastForward, Trash2, Crosshair, Target, Cpu, Flame, Snowflake, Ghost, Bomb, Lock, Star, Map, Skull } from 'lucide-react';
 
 interface HUDProps {
   gameState: GameState;
@@ -146,6 +146,62 @@ const AbilityHotbar: React.FC<{
     );
 };
 
+const BossHealthBar: React.FC<{ gameState: GameState }> = ({ gameState }) => {
+    const boss = gameState.activeBoss;
+    if (!boss || boss.health <= 0) return null;
+
+    const healthPct = (boss.health / boss.maxHealth) * 100;
+    const config = boss.bossConfig;
+    const phase = boss.currentPhase || 0;
+    
+    // Markers for phases: 75, 50, 25
+    const markers = [75, 50, 25];
+
+    return (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 w-full max-w-2xl flex flex-col items-center pointer-events-none animate-in slide-in-from-top-4 duration-500">
+             <div className="flex flex-col items-center mb-2">
+                 <div className="flex items-center gap-2">
+                     <Skull className="text-red-500 animate-pulse" />
+                     <h2 className="text-2xl font-black text-white uppercase tracking-tighter drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]">{config.name}</h2>
+                     <Skull className="text-red-500 animate-pulse" />
+                 </div>
+                 <span className="text-xs font-bold text-red-400 tracking-[0.3em] uppercase">{config.title}</span>
+             </div>
+             
+             <div className="relative w-full h-8 bg-slate-950 border-2 border-red-900/50 rounded-lg overflow-hidden shadow-[0_0_30px_rgba(220,38,38,0.3)]">
+                 {/* Background Strips */}
+                 <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,0,0,0.1)_25%,rgba(255,0,0,0.1)_50%,transparent_50%,transparent_75%,rgba(255,0,0,0.1)_75%,rgba(255,0,0,0.1)_100%)] bg-[length:20px_20px] animate-[pulse_2s_infinite]" />
+                 
+                 {/* Health Fill */}
+                 <div 
+                    className="absolute inset-0 bg-gradient-to-r from-red-700 via-red-600 to-red-500 transition-all duration-300 ease-out" 
+                    style={{ width: `${healthPct}%` }}
+                 />
+                 
+                 {/* Phase Markers */}
+                 {markers.map(m => (
+                     <div key={m} className="absolute top-0 bottom-0 w-0.5 bg-black/50 z-10" style={{ left: `${m}%` }} />
+                 ))}
+
+                 {/* Text Overlay */}
+                 <div className="absolute inset-0 flex items-center justify-center">
+                     <span className="text-xs font-bold text-white drop-shadow-md">{Math.ceil(boss.health)} / {boss.maxHealth}</span>
+                 </div>
+             </div>
+
+             {/* Phase Indicator */}
+             <div className="flex items-center gap-1 mt-1">
+                 {config.phases.map((p, i) => (
+                     <div 
+                        key={i} 
+                        className={`h-1.5 w-8 rounded-full transition-colors ${i <= phase ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]' : 'bg-slate-800'}`}
+                     />
+                 ))}
+             </div>
+        </div>
+    );
+};
+
 const HUD: React.FC<HUDProps> = ({ 
   gameState, 
   onStartWave, 
@@ -261,6 +317,15 @@ const HUD: React.FC<HUDProps> = ({
               </div>
           </div>
       )}
+      
+      {/* --- BOSS ANNOUNCEMENT OVERLAY (IN-GAME) --- */}
+      {gameState.gamePhase === 'BOSS_FIGHT' && gameState.bossAnnouncement && (
+          <div className="absolute top-32 left-0 right-0 z-40 flex justify-center pointer-events-none">
+              <div className="bg-red-600/90 text-white px-8 py-2 rounded-full font-black uppercase tracking-widest text-lg shadow-[0_0_20px_rgba(220,38,38,0.5)] animate-in slide-in-from-top-4 fade-in duration-300">
+                  {gameState.bossAnnouncement}
+              </div>
+          </div>
+      )}
 
       {/* --- STAGE COMPLETE OVERLAY --- */}
       {gameState.gamePhase === 'STAGE_COMPLETE' && (
@@ -303,6 +368,7 @@ const HUD: React.FC<HUDProps> = ({
       {/* --- MAIN HUD (Only Visible in Playing/Boss Phases) --- */}
       {isPlaying && (
         <>
+            <BossHealthBar gameState={gameState} />
             <AbilityHotbar gameState={gameState} onBatchTrigger={onBatchTrigger} />
 
             {/* Top Left: Resources & Active Augments */}

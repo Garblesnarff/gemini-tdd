@@ -50,6 +50,16 @@ const App: React.FC = () => {
     gameStateRef.current = gameState;
   }, [gameState]);
 
+  // Boss Announcement Clearer
+  useEffect(() => {
+    if (gameState.bossAnnouncement) {
+      const timer = setTimeout(() => {
+        setGameState(prev => ({ ...prev, bossAnnouncement: null }));
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [gameState.bossAnnouncement]);
+
   // Main Game Loop Logic
   useEffect(() => {
     // Only run loop in active gameplay phases
@@ -73,6 +83,7 @@ const App: React.FC = () => {
         let nextStatus = prev.waveStatus;
         let nextPhase = prev.gamePhase;
         let nextStageProgress = { ...prev.stageProgress };
+        let nextBossAnnouncement = prev.bossAnnouncement;
 
         // --- STEP 1: CALCULATE TOWER STATS (PASSIVES, ACTIVES, AUGMENTS) ---
         nextTowers.forEach(t => {
@@ -132,6 +143,13 @@ const App: React.FC = () => {
         for (let i = nextEnemies.length - 1; i >= 0; i--) {
           const enemy = nextEnemies[i];
           let speedMultiplier = 1;
+          
+          // Apply Boss Speed Multiplier from Phase
+          if (enemy.isBoss && enemy.bossConfig) {
+             const phase = enemy.bossConfig.phases[enemy.currentPhase || 0];
+             speedMultiplier *= phase.speedMultiplier;
+          }
+
           if (enemy.freezeTimer && enemy.freezeTimer > 0) {
               enemy.freezeTimer -= tickDelta;
               speedMultiplier = 0;
@@ -173,7 +191,9 @@ const App: React.FC = () => {
           if (tower.cooldown > 0) return;
           let candidates = nextEnemies.filter(enemy => {
              const dist = Math.sqrt(Math.pow(enemy.position.x - tower.position.x, 2) + Math.pow(enemy.position.z - tower.position.z, 2));
-             return dist <= tower.range;
+             // Boss larger hit box compensation
+             const hitRadius = enemy.isBoss ? (enemy.bossConfig?.size || 1) * 0.5 : 0;
+             return dist <= tower.range + hitRadius;
           });
           if (candidates.length > 0) {
               if (tower.targetPriority === TargetPriority.FIRST) {
@@ -208,8 +228,20 @@ const App: React.FC = () => {
           const dz = target.position.z - p.position.z;
           const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
           const moveDist = p.speed * prev.gameSpeed; 
-          if (dist < moveDist) {
-            target.health -= p.damage;
+          
+          // Hit check
+          // Boss larger hitbox
+          const hitRadius = target.isBoss ? 1 : 0.2;
+
+          if (dist < moveDist || dist < hitRadius) {
+            // Damage Calculation with Boss Resistance
+            let finalDamage = p.damage;
+            if (target.isBoss && target.bossConfig) {
+                 const phase = target.bossConfig.phases[target.currentPhase || 0];
+                 finalDamage *= (1 - phase.damageResistance);
+            }
+
+            target.health -= finalDamage;
             nextProjectiles.splice(i, 1);
             nextEffects.push({
                 id: Math.random().toString(), type: 'SPARK', position: { ...target.position, y: target.position.y + 0.5 },
@@ -225,7 +257,14 @@ const App: React.FC = () => {
                  nextEnemies.forEach(e => {
                     if (e.id === target.id) return;
                     const splashDist = Math.sqrt(Math.pow(e.position.x - target.position.x, 2) + Math.pow(e.position.z - target.position.z, 2));
-                    if (splashDist < 2) e.health -= p.damage * aug.effect.value;
+                    if (splashDist < 2) {
+                        let splashDmg = p.damage * aug.effect.value;
+                        if (e.isBoss && e.bossConfig) {
+                             const phase = e.bossConfig.phases[e.currentPhase || 0];
+                             splashDmg *= (1 - phase.damageResistance);
+                        }
+                        e.health -= splashDmg;
+                    }
                  });
               }
             });
@@ -238,7 +277,7 @@ const App: React.FC = () => {
                 nextEnemies.splice(enemyIdx, 1);
                 nextEffects.push({
                     id: Math.random().toString(), type: 'EXPLOSION', position: { ...target.position, y: 0.5 },
-                    color: stats.color, scale: 1, lifetime: 20, maxLifetime: 20
+                    color: stats.color, scale: target.isBoss ? 3 : 1, lifetime: 20, maxLifetime: 20
                 });
               }
             }
@@ -253,6 +292,25 @@ const App: React.FC = () => {
         for (let i = nextEffects.length - 1; i >= 0; i--) {
             nextEffects[i].lifetime -= 1 * prev.gameSpeed;
             if (nextEffects[i].lifetime <= 0) nextEffects.splice(i, 1);
+        }
+
+        // --- BOSS PHASE LOGIC ---
+        const currentBoss = nextEnemies.find(e => e.isBoss) as Boss | undefined;
+        if (currentBoss) {
+            const healthPct = currentBoss.health / currentBoss.maxHealth;
+            const config = currentBoss.bossConfig;
+            let phaseIdx = 0;
+            // Find lowest threshold reached. Assumes phases in config are sorted (1.0 down to 0.0) or we scan all.
+            for (let i = 0; i < config.phases.length; i++) {
+                if (healthPct <= config.phases[i].healthThreshold) {
+                    phaseIdx = i;
+                }
+            }
+
+            if (phaseIdx > (currentBoss.currentPhase || 0)) {
+                currentBoss.currentPhase = phaseIdx;
+                nextBossAnnouncement = config.phases[phaseIdx].announcement;
+            }
         }
 
         // --- STEP 6: WAVE COMPLETE (Economy Augments) & STAGE VICTORY CHECK ---
@@ -290,7 +348,7 @@ const App: React.FC = () => {
         return {
           ...prev, enemies: nextEnemies, projectiles: nextProjectiles, towers: nextTowers,
           effects: nextEffects, gold: nextGold, lives: nextLives, waveStatus: nextStatus, isGameOver: nextGameOver,
-          gamePhase: nextPhase, stageProgress: nextStageProgress
+          gamePhase: nextPhase, stageProgress: nextStageProgress, activeBoss: currentBoss || null, bossAnnouncement: nextBossAnnouncement
         };
       });
     }, TICK_RATE);
@@ -312,10 +370,6 @@ const App: React.FC = () => {
         return;
     }
     
-    // Check if we just completed a multiple of 5 waves (5, 10, 15...) to show augment menu BEFORE starting the next wave
-    // logic: we are about to start nextWaveNum. If (nextWaveNum - 1) % 5 === 0, it means we just finished wave 5, 10, etc.
-    // Except wave 0 -> start wave 1 (0%5==0 but we check >0).
-    // Example: Finished Wave 5. wave=5. nextWaveNum=6. (6-1)%5 == 0. Correct.
     if ((nextWaveNum - 1) % 5 === 0 && (nextWaveNum - 1) > 0) {
         const shuffled = [...AUGMENT_POOL].sort(() => 0.5 - Math.random());
         const choices = shuffled.slice(0, 3);
@@ -343,13 +397,10 @@ const App: React.FC = () => {
       waveIntel: waveDefinition.intel || "Incoming hostiles." 
     }));
 
-    // Process all groups in the composition
     let globalDelayOffset = 0;
 
     waveDefinition.composition.forEach(group => {
         const { type, count, interval, wait } = group;
-        
-        // Add wait time before this group starts spawning (serial groups)
         if (wait) globalDelayOffset += wait;
         
         for (let i = 0; i < count; i++) {
@@ -373,23 +424,13 @@ const App: React.FC = () => {
                         pathIndex: 0, 
                         progress: 0
                     };
-                    
-                    // Check if this is the absolute last enemy of the entire wave definition to switch to CLEARING
-                    // This is a bit tricky with timeouts. Simplification: Set status to spawning until the last one triggers.
-                    // Actually, waveStatus 'SPAWNING' -> 'CLEARING' transition is usually done when spawn queue is empty?
-                    // In the interval loop, we check for 'CLEARING' & enemies==0. 
-                    // We need to set 'CLEARING' after the last spawn is dispatched.
-                    
                     return { ...prev, enemies: [...prev.enemies, newEnemy] };
                 });
             }, spawnDelay);
         }
-        
-        // Advance global offset by the total time this group takes to spawn, so next group starts after
         globalDelayOffset += (count * interval);
     });
 
-    // Set status to CLEARING after the last enemy spawns
     setTimeout(() => {
          if (!gameStateRef.current.isGameOver) {
              setGameState(prev => ({ ...prev, waveStatus: 'CLEARING' }));
@@ -436,7 +477,8 @@ const App: React.FC = () => {
           ...prev,
           gamePhase: 'BOSS_FIGHT',
           enemies: [boss],
-          waveStatus: 'CLEARING', // Waiting for boss death
+          activeBoss: boss,
+          waveStatus: 'CLEARING',
           waveIntel: `WARNING: ${config.title} detected!`
       }));
   };
@@ -454,12 +496,11 @@ const App: React.FC = () => {
       performWaveStart(nextWaveToStart);
   };
 
-  // Generic trigger logic for one or many towers
   const executeAbilityOnTowers = (towerIds: string[]) => {
     setGameState(prev => {
         const nextTowers = [...prev.towers];
         const nextEffects = [...prev.effects];
-        const nextEnemies = prev.enemies.map(e => ({ ...e })); // Shallow copy for health updates
+        const nextEnemies = prev.enemies.map(e => ({ ...e }));
         let nextGold = prev.gold;
 
         towerIds.forEach(towerId => {
@@ -475,7 +516,6 @@ const App: React.FC = () => {
             nextTowers[towerIndex] = { ...tower, abilityCooldown: config.cooldown };
 
             if (tower.activeType === ActiveAbilityType.ERUPTION) {
-                // Self-centered explosion (old NUKE logic)
                 nextEffects.push({ id: Math.random().toString(), type: 'NOVA', position: tower.position, color: config.color, scale: 0.1, lifetime: 30, maxLifetime: 30 });
                 nextEnemies.forEach(e => {
                     const dist = Math.sqrt(Math.pow(e.position.x - tower.position.x, 2) + Math.pow(e.position.z - tower.position.z, 2));
@@ -498,7 +538,6 @@ const App: React.FC = () => {
     });
   };
 
-  // Triggering global Nuke at specific position
   const executeGlobalAbility = (pos: Vector3Tuple, type: ActiveAbilityType) => {
       if (type !== ActiveAbilityType.ORBITAL_STRIKE) return;
 
@@ -508,13 +547,10 @@ const App: React.FC = () => {
           const nextEnemies = prev.enemies.map(e => ({ ...e }));
           let nextGold = prev.gold;
           
-          // Find all available towers of this type
           const availableTowers = nextTowers.filter(t => t.activeType === type && t.abilityCooldown <= 0);
-          
           if (availableTowers.length === 0) return prev;
 
           const config = ABILITY_CONFIG[type];
-          // Use cooldowns
           availableTowers.forEach(t => {
              const idx = nextTowers.findIndex(nt => nt.id === t.id);
              if (idx > -1) {
@@ -522,23 +558,11 @@ const App: React.FC = () => {
              }
           });
 
-          // Scale damage based on number of towers? Or just fire one big blast.
-          // Let's do: Damage = Base Damage * Number of Ready Towers (Simulating a volley)
           const totalDamage = config.damage * availableTowers.length;
-          const radius = 4; // Blast radius
+          const radius = 4;
 
-          // Visuals
-          nextEffects.push({
-             id: Math.random().toString(),
-             type: 'ORBITAL_STRIKE',
-             position: pos,
-             color: config.color,
-             scale: radius,
-             lifetime: 40,
-             maxLifetime: 40
-          });
+          nextEffects.push({ id: Math.random().toString(), type: 'ORBITAL_STRIKE', position: pos, color: config.color, scale: radius, lifetime: 40, maxLifetime: 40 });
 
-          // Logic
           nextEnemies.forEach(e => {
              const dist = Math.sqrt(Math.pow(e.position.x - pos.x, 2) + Math.pow(e.position.z - pos.z, 2));
              if (dist <= radius) {
@@ -556,10 +580,8 @@ const App: React.FC = () => {
   };
 
   const handleTriggerAbility = (towerId: string) => {
-      // Legacy check for button clicking a specific tower
       const tower = gameState.towers.find(t => t.id === towerId);
       if (tower?.activeType === ActiveAbilityType.ORBITAL_STRIKE) {
-          // If a user clicks 'Activate' on a specific tower, we enter global targeting mode for NUKE
           setGameState(prev => ({ ...prev, targetingAbility: ActiveAbilityType.ORBITAL_STRIKE, selectedTowerId: null }));
       } else {
           executeAbilityOnTowers([towerId]);
@@ -568,8 +590,6 @@ const App: React.FC = () => {
 
   const handleBatchTriggerAbility = (activeType: ActiveAbilityType) => {
       const currentGameState = gameStateRef.current;
-      
-      // If Targeting type, enter targeting mode instead of firing instantly
       if (activeType === ActiveAbilityType.ORBITAL_STRIKE) {
           setGameState(prev => ({ 
               ...prev, 
@@ -580,14 +600,10 @@ const App: React.FC = () => {
           return;
       }
 
-      // Standard behavior for other abilities
       const towersToTrigger = currentGameState.towers.filter(t => {
           if (t.activeType !== activeType || t.abilityCooldown > 0) return false;
           return currentGameState.enemies.some(enemy => {
-              const dist = Math.sqrt(
-                  Math.pow(enemy.position.x - t.position.x, 2) +
-                  Math.pow(enemy.position.z - t.position.z, 2)
-              );
+              const dist = Math.sqrt(Math.pow(enemy.position.x - t.position.x, 2) + Math.pow(enemy.position.z - t.position.z, 2));
               return dist <= t.range;
           });
       });
@@ -596,7 +612,6 @@ const App: React.FC = () => {
       executeAbilityOnTowers(towersToTrigger.map(t => t.id));
   };
 
-  // Keyboard Listeners
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
         if (gameStateRef.current.isChoosingAugment) return;
@@ -615,8 +630,6 @@ const App: React.FC = () => {
 
   const handleGridClick = (pos: Vector3Tuple) => {
       if (gameState.isGameOver || gameState.gameSpeed === 0 || gameState.isChoosingAugment) return;
-      
-      // Handle Targeting Mode Click
       if (gameState.targetingAbility) {
           executeGlobalAbility(pos, gameState.targetingAbility);
           return;
@@ -628,14 +641,12 @@ const App: React.FC = () => {
       const exists = gameState.towers.some(t => Math.abs(t.position.x - pos.x) < 0.5 && Math.abs(t.position.z - pos.z) < 0.5);
       if (exists) return;
       
-      // Dynamic Path Collision Detection
       const currentStageConfig = STAGE_CONFIGS[gameState.currentStage];
       const activePath = currentStageConfig.path;
       
       const onPath = activePath.some((wp, idx) => {
         if (idx === activePath.length - 1) return false;
         const next = activePath[idx + 1];
-        // Create bounding box for path segment
         const minX = Math.min(wp.x, next.x) - 0.8; const maxX = Math.max(wp.x, next.x) + 0.8;
         const minZ = Math.min(wp.z, next.z) - 0.8; const maxZ = Math.max(wp.z, next.z) + 0.8;
         return pos.x >= minX && pos.x <= maxX && pos.z >= minZ && pos.z <= maxZ;
@@ -730,7 +741,6 @@ const App: React.FC = () => {
 
   const setGameSpeed = (speed: number) => setGameState(prev => ({ ...prev, gameSpeed: speed }));
 
-  // Transitions
   const goToMenu = () => setGameState(prev => ({ ...prev, gamePhase: 'MENU' }));
   const goToStageSelect = () => setGameState(prev => ({ ...prev, gamePhase: 'STAGE_SELECT' }));
   

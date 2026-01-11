@@ -3,7 +3,7 @@ import React, { useState, useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Stars, Sky, Environment, Box, Cylinder, Sphere, Float, Sparkles, Icosahedron, Ring, Html } from '@react-three/drei';
 import * as THREE from 'three';
-import { GameState, TowerType, Vector3Tuple, EnemyType, Tower, Enemy, TechPath, Effect, PassiveType, ActiveAbilityType } from '../types';
+import { GameState, TowerType, Vector3Tuple, EnemyType, Tower, Enemy, TechPath, Effect, PassiveType, ActiveAbilityType, Boss } from '../types';
 import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, TECH_PATH_INFO, ABILITY_CONFIG } from '../constants';
 
 interface SceneProps {
@@ -108,7 +108,98 @@ const FreezeEffect: React.FC<{ position: Vector3Tuple, color: string, progress: 
   );
 };
 
-// --- TOWER COMPONENT ---
+// --- UNIT COMPONENTS ---
+
+const BossUnit: React.FC<{ boss: Boss }> = ({ boss }) => {
+    const groupRef = useRef<THREE.Group>(null);
+    const coreRef = useRef<THREE.Mesh>(null);
+    const ringRef = useRef<THREE.Mesh>(null);
+    
+    const phase = boss.currentPhase || 0;
+    const config = boss.bossConfig;
+    const size = config.size;
+    
+    // Phase 1 (75%) -> Enraged (Red glow, faster spin)
+    // Phase 2 (50%) -> Shielded (Blue bubble)
+    // Phase 3 (25%) -> Unstable (Glitching)
+    const isEnraged = phase >= 1;
+    const isShielded = phase === 2;
+    const isUnstable = phase >= 3;
+    
+    const color = isEnraged ? '#ef4444' : config.color;
+
+    useFrame((state, delta) => {
+        if (!groupRef.current) return;
+        
+        // Hover
+        groupRef.current.position.y = 1.5 + Math.sin(state.clock.elapsedTime * 2) * 0.2;
+        
+        // Rotation based on phase
+        const speed = isEnraged ? 2 : 0.5;
+        if (ringRef.current) {
+            ringRef.current.rotation.z += delta * speed;
+            ringRef.current.rotation.x += delta * speed * 0.5;
+        }
+
+        // Pulse core
+        if (coreRef.current) {
+             const scale = 1 + Math.sin(state.clock.elapsedTime * (isEnraged ? 10 : 3)) * 0.1;
+             coreRef.current.scale.setScalar(scale);
+        }
+        
+        // Unstable jitter
+        if (isUnstable) {
+             groupRef.current.position.x += (Math.random() - 0.5) * 0.1;
+             groupRef.current.position.z += (Math.random() - 0.5) * 0.1;
+        }
+    });
+
+    return (
+        <group position={[boss.position.x, 0, boss.position.z]}>
+            <group ref={groupRef}>
+                {/* Core Body */}
+                <mesh ref={coreRef} castShadow receiveShadow>
+                     <boxGeometry args={[size * 0.6, size * 0.6, size * 0.6]} />
+                     <meshStandardMaterial color={color} emissive={color} emissiveIntensity={isEnraged ? 2 : 0.5} />
+                </mesh>
+                
+                {/* Armor Plates */}
+                <group>
+                    <mesh position={[size * 0.4, 0, 0]} castShadow>
+                        <boxGeometry args={[size * 0.1, size * 0.8, size * 0.4]} />
+                        <meshStandardMaterial color="#1e293b" metalness={0.8} roughness={0.2} />
+                    </mesh>
+                    <mesh position={[-size * 0.4, 0, 0]} castShadow>
+                        <boxGeometry args={[size * 0.1, size * 0.8, size * 0.4]} />
+                        <meshStandardMaterial color="#1e293b" metalness={0.8} roughness={0.2} />
+                    </mesh>
+                </group>
+
+                {/* Rotating Ring */}
+                <mesh ref={ringRef} rotation={[Math.PI / 2, 0, 0]}>
+                    <torusGeometry args={[size * 0.8, size * 0.05, 8, 32]} />
+                    <meshStandardMaterial color="#fff" emissive="#fff" emissiveIntensity={0.8} />
+                </mesh>
+
+                {/* Shield Bubble */}
+                {isShielded && (
+                    <mesh>
+                        <sphereGeometry args={[size, 32, 32]} />
+                        <meshPhysicalMaterial color="#3b82f6" transparent opacity={0.3} transmission={0.5} roughness={0} />
+                    </mesh>
+                )}
+            </group>
+            
+            {/* Ground Shadow */}
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
+                <circleGeometry args={[size, 32]} />
+                <meshBasicMaterial color="#000" transparent opacity={0.5} />
+            </mesh>
+            
+            {/* Boss overhead UI can go here if we wanted 3D UI, but using HUD for main bar */}
+        </group>
+    );
+};
 
 const TowerUnit: React.FC<{ 
     tower: Tower; 
@@ -480,25 +571,29 @@ const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, s
       })}
 
       {gameState.enemies.map(enemy => (
-        <group key={enemy.id} position={[enemy.position.x, enemy.position.y + 0.5, enemy.position.z]}>
-          <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
-            <Box args={[0.6, 0.6, 0.6]} castShadow>
-              <meshStandardMaterial 
-                color={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color} 
-                emissive={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color}
-                emissiveIntensity={enemy.freezeTimer && enemy.freezeTimer > 0 ? 0.8 : 0.5}
-              />
-            </Box>
-          </Float>
-          <mesh position={[0, 0.8, 0]}>
-            <planeGeometry args={[0.8, 0.1]} />
-            <meshBasicMaterial color="red" />
-          </mesh>
-          <mesh position={[0, 0.8, 0.01]}>
-            <planeGeometry args={[0.8 * (enemy.health / enemy.maxHealth), 0.1]} />
-            <meshBasicMaterial color="#4ade80" />
-          </mesh>
-        </group>
+        enemy.isBoss ? (
+             <BossUnit key={enemy.id} boss={enemy as Boss} />
+        ) : (
+            <group key={enemy.id} position={[enemy.position.x, enemy.position.y + 0.5, enemy.position.z]}>
+            <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
+                <Box args={[0.6, 0.6, 0.6]} castShadow>
+                <meshStandardMaterial 
+                    color={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color} 
+                    emissive={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color}
+                    emissiveIntensity={enemy.freezeTimer && enemy.freezeTimer > 0 ? 0.8 : 0.5}
+                />
+                </Box>
+            </Float>
+            <mesh position={[0, 0.8, 0]}>
+                <planeGeometry args={[0.8, 0.1]} />
+                <meshBasicMaterial color="red" />
+            </mesh>
+            <mesh position={[0, 0.8, 0.01]}>
+                <planeGeometry args={[0.8 * (enemy.health / enemy.maxHealth), 0.1]} />
+                <meshBasicMaterial color="#4ade80" />
+            </mesh>
+            </group>
+        )
       ))}
 
       {gameState.towers.map(tower => (
