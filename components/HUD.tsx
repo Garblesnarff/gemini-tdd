@@ -45,76 +45,100 @@ const AbilityHotbar: React.FC<{
     onBatchTrigger: (type: ActiveAbilityType) => void 
 }> = ({ gameState, onBatchTrigger }) => {
     
-    const abilityStats = useMemo(() => {
-        const stats: Record<string, AbilityStat> = {
-            [ActiveAbilityType.ERUPTION]: { count: 0, ready: 0, maxCd: 0, currentCd: 0, label: 'ERUPT', key: '1', color: 'red' },
-            [ActiveAbilityType.OVERCLOCK]: { count: 0, ready: 0, maxCd: 0, currentCd: 0, label: 'CLOCK', key: '2', color: 'cyan' },
-            [ActiveAbilityType.FREEZE]: { count: 0, ready: 0, maxCd: 0, currentCd: 0, label: 'FREEZE', key: '3', color: 'purple' },
-            [ActiveAbilityType.ORBITAL_STRIKE]: { count: 0, ready: 0, maxCd: 0, currentCd: 0, label: 'STRIKE', key: '4', color: 'rose' },
-        };
-
-        gameState.towers.forEach(t => {
-            if (t.activeType === ActiveAbilityType.NONE) return;
-            const s = stats[t.activeType];
-            if (!s) return;
-
-            s.count++;
-            if (t.abilityCooldown <= 0) {
-                if (t.activeType === ActiveAbilityType.ORBITAL_STRIKE) {
-                    s.ready++;
-                } else {
-                    const hasTarget = gameState.enemies.some(enemy => {
-                        const dist = Math.sqrt(
-                            Math.pow(enemy.position.x - t.position.x, 2) +
-                            Math.pow(enemy.position.z - t.position.z, 2)
-                        );
-                        return dist <= t.range;
-                    });
-                    if (hasTarget) {
-                        s.ready++;
+    // Group abilities into slots
+    const abilityGroups = useMemo(() => {
+        const groups = [
+            { 
+                types: [ActiveAbilityType.ERUPTION, ActiveAbilityType.NAPALM],
+                label: 'PWR-1', key: '1', color: 'red', icon: Flame 
+            },
+            {
+                types: [ActiveAbilityType.OVERCLOCK, ActiveAbilityType.BARRAGE],
+                label: 'PWR-2', key: '2', color: 'cyan', icon: Zap
+            },
+            {
+                types: [ActiveAbilityType.FREEZE, ActiveAbilityType.SINGULARITY],
+                label: 'PWR-3', key: '3', color: 'purple', icon: Snowflake
+            },
+            {
+                types: [ActiveAbilityType.ORBITAL_STRIKE],
+                label: 'ULT', key: '4', color: 'rose', icon: Bomb
+            }
+        ];
+        
+        return groups.map(group => {
+            let count = 0;
+            let ready = 0;
+            let currentCd = 0;
+            let maxCd = 0;
+            
+            // Iterate all towers to aggregate stats for this group
+            gameState.towers.forEach(t => {
+                if (group.types.includes(t.activeType)) {
+                    count++;
+                    if (t.abilityCooldown <= 0) {
+                        // Check readiness
+                        if (t.activeType === ActiveAbilityType.ORBITAL_STRIKE) {
+                            ready++;
+                        } else {
+                            // Basic readiness check (enemies in range)
+                            const hasTarget = gameState.enemies.some(enemy => {
+                                const dist = Math.sqrt(
+                                    Math.pow(enemy.position.x - t.position.x, 2) +
+                                    Math.pow(enemy.position.z - t.position.z, 2)
+                                );
+                                return dist <= t.range;
+                            });
+                            // Overclock always ready if no CD
+                            if (t.activeType === ActiveAbilityType.OVERCLOCK || hasTarget) {
+                                ready++;
+                            }
+                        }
+                    } else {
+                        // Aggregate Cooldowns: Show the longest wait or average? 
+                        // Let's show the *first available* cooldown or max if none available
+                        if (currentCd === 0 || t.abilityCooldown > currentCd) {
+                             currentCd = t.abilityCooldown;
+                             maxCd = t.abilityMaxCooldown;
+                        }
                     }
                 }
-            } else {
-                if (s.currentCd === 0 || t.abilityCooldown < s.currentCd) {
-                    s.currentCd = t.abilityCooldown;
-                    s.maxCd = t.abilityMaxCooldown;
-                }
-            }
+            });
+            
+            return { ...group, count, ready, currentCd, maxCd };
         });
-        return stats;
     }, [gameState.towers, gameState.enemies]);
 
     return (
         <div className="absolute left-6 top-1/2 -translate-y-1/2 flex flex-col gap-3 pointer-events-auto">
-            {Object.entries(abilityStats).map(([type, statValue]) => {
-                const s = statValue as AbilityStat;
-                const activeType = type as ActiveAbilityType;
-                const hasTech = s.count > 0;
-                const progress = s.currentCd > 0 ? (s.currentCd / s.maxCd) * 100 : 0;
-                const isTargeting = gameState.targetingAbility === activeType;
+            {abilityGroups.map((group) => {
+                const hasTech = group.count > 0;
+                const progress = group.currentCd > 0 ? (group.currentCd / group.maxCd) * 100 : 0;
+                // Determine if we are targeting the ULT
+                const isTargeting = group.types.includes(ActiveAbilityType.ORBITAL_STRIKE) && gameState.targetingAbility === ActiveAbilityType.ORBITAL_STRIKE;
                 
-                let Icon = Crosshair;
-                if (activeType === ActiveAbilityType.ERUPTION) Icon = Flame;
-                if (activeType === ActiveAbilityType.OVERCLOCK) Icon = Zap;
-                if (activeType === ActiveAbilityType.FREEZE) Icon = Snowflake;
-                if (activeType === ActiveAbilityType.ORBITAL_STRIKE) Icon = Bomb;
+                // Trigger action for the group
+                const handleClick = () => {
+                    if (!hasTech) return;
+                    group.types.forEach(type => onBatchTrigger(type));
+                };
 
                 return (
                     <button
-                        key={type}
-                        onClick={() => hasTech && onBatchTrigger(activeType)}
-                        disabled={!hasTech || s.ready === 0}
+                        key={group.key}
+                        onClick={handleClick}
+                        disabled={!hasTech || (group.ready === 0 && group.currentCd > 0)}
                         className={`
                             group relative w-16 h-16 rounded-xl border-2 flex flex-col items-center justify-center transition-all duration-200 overflow-hidden
                             ${!hasTech ? 'opacity-20 bg-slate-900 border-slate-800 grayscale cursor-not-allowed' : 
                               isTargeting 
                                 ? `bg-red-500/20 border-red-500 animate-pulse shadow-[0_0_20px_rgba(239,68,68,0.5)]` 
-                                : s.ready > 0 
-                                    ? `bg-slate-900/80 border-${s.color}-500/50 hover:border-${s.color}-400 shadow-[0_0_15px_rgba(59,130,246,0.2)] active:scale-95` 
+                                : group.ready > 0 
+                                    ? `bg-slate-900/80 border-${group.color}-500/50 hover:border-${group.color}-400 shadow-[0_0_15px_rgba(59,130,246,0.2)] active:scale-95` 
                                     : 'bg-slate-950/90 border-slate-800 cursor-not-allowed grayscale'}
                         `}
                     >
-                        {s.currentCd > 0 && !isTargeting && (
+                        {group.currentCd > 0 && !isTargeting && group.ready === 0 && (
                             <div 
                                 className="absolute bottom-0 left-0 right-0 bg-slate-800/80 origin-bottom z-0"
                                 style={{ height: `${progress}%` }}
@@ -122,21 +146,21 @@ const AbilityHotbar: React.FC<{
                         )}
 
                         <div className="relative z-10 flex flex-col items-center">
-                            <Icon size={24} className={isTargeting ? 'text-red-400' : s.ready > 0 ? `text-${s.color}-400` : 'text-slate-500'} />
+                            <group.icon size={24} className={isTargeting ? 'text-red-400' : group.ready > 0 ? `text-${group.color}-400` : 'text-slate-500'} />
                             <span className={`text-[9px] font-black uppercase tracking-tighter mt-1 ${isTargeting ? 'text-red-400' : 'opacity-70'}`}>
-                                {isTargeting ? 'TARGETING' : s.label}
+                                {isTargeting ? 'TARGETING' : group.label}
                             </span>
                         </div>
 
                         {hasTech && (
                             <div className={`absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black border border-slate-800 shadow-lg z-20
-                                ${s.ready > 0 ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400'}
+                                ${group.ready > 0 ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400'}
                             `}>
-                                {s.ready}
+                                {group.ready}
                             </div>
                         )}
 
-                        <div className="absolute bottom-0.5 left-1 text-[8px] font-bold text-slate-500 uppercase">{s.key}</div>
+                        <div className="absolute bottom-0.5 left-1 text-[8px] font-bold text-slate-500 uppercase">{group.key}</div>
                     </button>
                 );
             })}

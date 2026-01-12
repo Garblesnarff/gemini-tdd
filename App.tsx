@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars, Sky, Environment, Float, Text } from '@react-three/drei';
 import * as THREE from 'three';
-import { GameState, Enemy, Tower, Projectile, Effect, DamageNumber, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType, StageId, Boss, BossAbilityType, DirectorActionType } from './types';
+import { GameState, Enemy, Tower, Projectile, Effect, DamageNumber, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType, StageId, Boss, BossAbilityType, DirectorActionType, Hazard } from './types';
 import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL, STAGE_CONFIGS, getWaveDefinition, INITIAL_STAGE_PROGRESS, TECH_PATH_INFO, TACTICAL_INTEL_POOL } from './constants';
 import HUD from './components/HUD';
 import Scene from './components/Scene';
@@ -22,6 +22,7 @@ const App: React.FC = () => {
     projectiles: [],
     effects: [],
     damageNumbers: [],
+    hazards: [],
     gameSpeed: 1,
     isGameOver: false,
     waveStatus: 'IDLE',
@@ -94,6 +95,7 @@ const App: React.FC = () => {
         const nextTowers = [...prev.towers];
         const nextEffects = [...prev.effects];
         const nextDamageNumbers = [...prev.damageNumbers];
+        let nextHazards = [...prev.hazards];
         let nextGold = prev.gold;
         let nextLives = prev.lives;
         let nextStatus = prev.waveStatus;
@@ -169,7 +171,8 @@ const App: React.FC = () => {
                 stageProgress: nextStageProgress, 
                 enemies: nextEnemies,
                 stats: nextStats,
-                waveStatus: nextStatus
+                waveStatus: nextStatus,
+                hazards: []
             };
         }
 
@@ -218,23 +221,73 @@ const App: React.FC = () => {
         // Apply Global System Patches (Augments)
         prev.activeAugments.forEach(aug => {
           if (aug.type === AugmentType.STAT_BUFF) {
-             nextTowers.forEach(t => {
-                const typeMatches = aug.effect.target === 'ALL' || aug.effect.target === t.type;
-                const pathMatches = !aug.effect.techTarget || aug.effect.techTarget === t.techPath;
-                
-                if (typeMatches && pathMatches) {
-                   if (aug.effect.stat === 'damage') t.damage *= (1 + aug.effect.value);
-                   if (aug.effect.stat === 'range') t.range *= (1 + aug.effect.value);
-                   if (aug.effect.stat === 'fireRate') t.fireRate *= (1 + aug.effect.value);
-                }
-             });
+             if (aug.effect.special === 'BOMBARDMENT') {
+                 nextTowers.forEach(t => {
+                    if (t.type === TowerType.ARTILLERY) {
+                        t.damage *= 1.3;
+                        t.fireRate *= 0.8;
+                    }
+                 });
+             } else {
+                 nextTowers.forEach(t => {
+                    const typeMatches = aug.effect.target === 'ALL' || aug.effect.target === t.type;
+                    const pathMatches = !aug.effect.techTarget || aug.effect.techTarget === t.techPath;
+                    
+                    if (typeMatches && pathMatches) {
+                       if (aug.effect.stat === 'damage') t.damage *= (1 + aug.effect.value);
+                       if (aug.effect.stat === 'range') t.range *= (1 + aug.effect.value);
+                       if (aug.effect.stat === 'fireRate') t.fireRate *= (1 + aug.effect.value);
+                    }
+                 });
+             }
           }
         });
 
 
+        // --- STEP 1.5: PROCESS HAZARDS ---
+        for (let i = nextHazards.length - 1; i >= 0; i--) {
+            const hazard = nextHazards[i];
+            hazard.duration -= tickDelta;
+            if (hazard.duration <= 0) {
+                nextHazards.splice(i, 1);
+                continue;
+            }
+            
+            // Effect logic
+            if (hazard.type === 'NAPALM') {
+                // Damage per tick
+                const damagePerTick = (hazard.value * tickDelta) / 1000;
+                nextEnemies.forEach(e => {
+                    const dist = Math.sqrt(Math.pow(e.position.x - hazard.position.x, 2) + Math.pow(e.position.z - hazard.position.z, 2));
+                    if (dist <= hazard.radius) {
+                        e.health -= damagePerTick;
+                    }
+                });
+            } else if (hazard.type === 'SINGULARITY') {
+                // Pull enemies
+                 nextEnemies.forEach(e => {
+                    const dist = Math.sqrt(Math.pow(e.position.x - hazard.position.x, 2) + Math.pow(e.position.z - hazard.position.z, 2));
+                    if (dist <= hazard.radius && dist > 0.5) {
+                        const pullFactor = hazard.value * (tickDelta / 1000);
+                        const dx = hazard.position.x - e.position.x;
+                        const dz = hazard.position.z - e.position.z;
+                        e.position.x += dx * pullFactor;
+                        e.position.z += dz * pullFactor;
+                    }
+                });
+            }
+        }
+
         // --- STEP 2: MOVE ENEMIES ---
         for (let i = nextEnemies.length - 1; i >= 0; i--) {
           const enemy = nextEnemies[i];
+          if (enemy.health <= 0) {
+              // Should be caught by hazard logic, but double check
+              // We handle death logic below in projectiles primarily, but if hazards kill them:
+              // For now, let hazards just reduce health, we do a cleanup pass for death later if needed.
+              // Actually, let's do a death check pass after projectile loop to handle hazard deaths.
+          }
+          
           let speedMultiplier = 1;
           
           // Apply Boss Buffs
@@ -334,14 +387,27 @@ const App: React.FC = () => {
               const target = candidates[0];
               tower.cooldown = 1000 / tower.fireRate;
               tower.lastShotTime = now; 
+              
+              const tStats = TOWER_STATS[tower.type];
+              // Apply Augment for Artillery radius
+              let blastRadius = tStats.blastRadius || 0;
+              if (tower.type === TowerType.ARTILLERY) {
+                  prev.activeAugments.forEach(aug => {
+                      if (aug.type === AugmentType.STAT_BUFF && aug.effect.special === 'CLUSTER_MUNITIONS') {
+                          blastRadius *= (1 + aug.effect.value);
+                      }
+                  });
+              }
+
               nextProjectiles.push({
                 id: Math.random().toString(),
                 position: { ...tower.position, y: 0.8 },
                 targetId: target.id,
                 damage: tower.damage,
-                speed: 0.5,
-                color: TOWER_STATS[tower.type].color,
-                sourceType: tower.type
+                speed: tStats.projectileSpeed || 0.5,
+                color: tStats.color,
+                sourceType: tower.type,
+                blastRadius
               });
           }
         });
@@ -350,7 +416,15 @@ const App: React.FC = () => {
         for (let i = nextProjectiles.length - 1; i >= 0; i--) {
           const p = nextProjectiles[i];
           const target = nextEnemies.find(e => e.id === p.targetId);
+          
+          // Projectile cleanup if target lost (except Artillery which hits ground)
+          if (!target && p.sourceType !== TowerType.ARTILLERY) { nextProjectiles.splice(i, 1); continue; }
+          
+          // Target pos (or last known for artillery if target died? Simplified: just aim at where target IS currently)
+          // If target is gone for artillery, maybe just remove projectile or let it hit last known? 
+          // Simplified: Artillery needs target to track, if target dies, remove projectile.
           if (!target) { nextProjectiles.splice(i, 1); continue; }
+
           const dx = target.position.x - p.position.x;
           const dy = target.position.y - p.position.y;
           const dz = target.position.z - p.position.z;
@@ -360,135 +434,196 @@ const App: React.FC = () => {
           const hitRadius = target.isBoss ? 1 : 0.2;
 
           if (dist < moveDist || dist < hitRadius) {
-            let damageDealt = 0;
-            let isImmune = false;
-
-            if (target.isBoss) {
-                const boss = target as Boss;
-                if (boss.isShielded) {
-                    isImmune = true;
-                    nextEffects.push({
-                        id: Math.random().toString(), type: 'BLOCKED', position: { ...target.position, y: target.position.y + 1 },
-                        color: '#3b82f6', scale: 1, lifetime: 20, maxLifetime: 20, text: "BLOCKED"
-                    });
-                } else {
-                    let finalDamage = p.damage;
-                    const phase = boss.bossConfig.phases[boss.currentPhase || 0];
-                    finalDamage *= (1 - phase.damageResistance);
-                    damageDealt = finalDamage;
-                }
-            } else {
-                damageDealt = p.damage;
-            }
-
-            if (!isImmune) {
-                target.health -= damageDealt;
-
-                // --- SPAWN DAMAGE NUMBER ---
-                if (nextDamageNumbers.length < MAX_DAMAGE_NUMBERS) {
-                  const sourceTowerType = p.sourceType;
-                  let textColor = '#ffffff';
-                  if (sourceTowerType === TowerType.SNIPER) textColor = '#ef4444';
-                  else if (sourceTowerType === TowerType.FAST) textColor = '#10b981';
-                  
-                  // Jitter
-                  const jitterX = (Math.random() - 0.5) * 0.8;
-                  const jitterZ = (Math.random() - 0.5) * 0.8;
-
-                  nextDamageNumbers.push({
-                    id: Math.random().toString(),
-                    position: { x: target.position.x + jitterX, y: target.position.y + 0.8, z: target.position.z + jitterZ },
-                    value: damageDealt,
-                    color: textColor,
-                    lifetime: 1000,
-                    maxLifetime: 1000,
-                    isCritical: sourceTowerType === TowerType.SNIPER || damageDealt > 50
-                  });
-                }
-
+            
+            // --- HIT LOGIC ---
+            
+            if (p.sourceType === TowerType.ARTILLERY) {
+                // EXPLOSION EFFECT
                 nextEffects.push({
-                    id: Math.random().toString(), type: 'SPARK', position: { ...target.position, y: target.position.y + 0.5 },
-                    color: p.color, scale: 0.5, lifetime: 10, maxLifetime: 10
+                    id: Math.random().toString(), type: 'EXPLOSION', position: { ...target.position, y: 0.2 },
+                    color: p.color, scale: (p.blastRadius || 2) * 2, lifetime: 20, maxLifetime: 20
+                });
+                
+                // AOE DAMAGE
+                nextEnemies.forEach(e => {
+                    const blastDist = Math.sqrt(Math.pow(e.position.x - target.position.x, 2) + Math.pow(e.position.z - target.position.z, 2));
+                    if (blastDist <= (p.blastRadius || 0)) {
+                        let damageDealt = p.damage;
+                         if (e.isBoss) {
+                              const b = e as Boss;
+                              if (!b.isShielded) {
+                                  const phase = b.bossConfig.phases[b.currentPhase || 0];
+                                  damageDealt *= (1 - phase.damageResistance);
+                                  e.health -= damageDealt;
+                              }
+                          } else {
+                              e.health -= damageDealt;
+                          }
+                          // Damage Number
+                          if (nextDamageNumbers.length < MAX_DAMAGE_NUMBERS) {
+                             nextDamageNumbers.push({
+                                id: Math.random().toString(), position: { x: e.position.x, y: e.position.y + 1, z: e.position.z },
+                                value: damageDealt, color: '#f59e0b', lifetime: 800, maxLifetime: 800, isCritical: false
+                             });
+                          }
+                    }
                 });
 
-                prev.activeAugments.forEach(aug => {
-                    if (aug.type === AugmentType.ON_HIT && aug.effect.special === 'SPLASH_DAMAGE' && aug.effect.target === p.sourceType) {
-                       nextEffects.push({
-                          id: Math.random().toString(), type: 'EXPLOSION', position: target.position,
-                          color: p.color, scale: 1.5, lifetime: 15, maxLifetime: 15
-                       });
-                       nextEnemies.forEach(e => {
-                          if (e.id === target.id) return;
-                          const splashDist = Math.sqrt(Math.pow(e.position.x - target.position.x, 2) + Math.pow(e.position.z - target.position.z, 2));
-                          if (splashDist < 2) {
-                              let splashDmg = p.damage * aug.effect.value;
-                              if (e.isBoss) {
-                                  const b = e as Boss;
-                                  if (!b.isShielded) {
-                                      const phase = b.bossConfig.phases[b.currentPhase || 0];
-                                      splashDmg *= (1 - phase.damageResistance);
-                                      e.health -= splashDmg;
-                                      // Spawn Splash Damage Number
-                                      if (nextDamageNumbers.length < MAX_DAMAGE_NUMBERS) {
-                                        nextDamageNumbers.push({
-                                          id: Math.random().toString(),
-                                          position: { x: e.position.x + (Math.random()-0.5), y: e.position.y + 1, z: e.position.z + (Math.random()-0.5) },
-                                          value: splashDmg,
-                                          color: p.color,
-                                          lifetime: 800, maxLifetime: 800, isCritical: false
-                                        });
-                                      }
-                                  }
-                              } else {
-                                  e.health -= splashDmg;
-                                  // Spawn Splash Damage Number
-                                  if (nextDamageNumbers.length < MAX_DAMAGE_NUMBERS) {
-                                    nextDamageNumbers.push({
-                                      id: Math.random().toString(),
-                                      position: { x: e.position.x + (Math.random()-0.5), y: e.position.y + 1, z: e.position.z + (Math.random()-0.5) },
-                                      value: splashDmg,
-                                      color: p.color,
-                                      lifetime: 800, maxLifetime: 800, isCritical: false
-                                    });
-                                  }
-                              }
-                          }
-                       });
+            } else {
+                // SINGLE TARGET HIT
+                let damageDealt = 0;
+                let isImmune = false;
+
+                if (target.isBoss) {
+                    const boss = target as Boss;
+                    if (boss.isShielded) {
+                        isImmune = true;
+                        nextEffects.push({
+                            id: Math.random().toString(), type: 'BLOCKED', position: { ...target.position, y: target.position.y + 1 },
+                            color: '#3b82f6', scale: 1, lifetime: 20, maxLifetime: 20, text: "BLOCKED"
+                        });
+                    } else {
+                        let finalDamage = p.damage;
+                        const phase = boss.bossConfig.phases[boss.currentPhase || 0];
+                        finalDamage *= (1 - phase.damageResistance);
+                        damageDealt = finalDamage;
                     }
-                  });
-            }
+                } else {
+                    damageDealt = p.damage;
+                }
 
-            nextProjectiles.splice(i, 1);
+                if (!isImmune) {
+                    target.health -= damageDealt;
 
-            if (target.health <= 0) {
-               // BOSS DEATH CHECK
-               if (target.isBoss) {
-                   // Trigger Boss Death Sequence
-                   nextPhase = 'BOSS_DEATH';
-                   nextBossDeathTimer = 3500; // 3.5 seconds for animation
-                   nextBossAnnouncement = "TARGET DESTROYED";
-                   // Do not remove boss from array yet
-               } else {
-                  const enemyIdx = nextEnemies.indexOf(target);
-                  if (enemyIdx > -1) {
-                    const stats = ENEMY_STATS[target.type];
-                    const reward = Math.floor(stats.goldReward * prev.directorGoldBonus);
-                    nextGold += reward;
-                    nextStats.totalGoldEarned += reward; // Stats Tracking
-                    nextEnemies.splice(enemyIdx, 1);
-                    nextEffects.push({
-                        id: Math.random().toString(), type: 'EXPLOSION', position: { ...target.position, y: 0.5 },
-                        color: stats.color, scale: 1, lifetime: 20, maxLifetime: 20
+                    // --- SPAWN DAMAGE NUMBER ---
+                    if (nextDamageNumbers.length < MAX_DAMAGE_NUMBERS) {
+                    const sourceTowerType = p.sourceType;
+                    let textColor = '#ffffff';
+                    if (sourceTowerType === TowerType.SNIPER) textColor = '#ef4444';
+                    else if (sourceTowerType === TowerType.FAST) textColor = '#10b981';
+                    
+                    // Jitter
+                    const jitterX = (Math.random() - 0.5) * 0.8;
+                    const jitterZ = (Math.random() - 0.5) * 0.8;
+
+                    nextDamageNumbers.push({
+                        id: Math.random().toString(),
+                        position: { x: target.position.x + jitterX, y: target.position.y + 0.8, z: target.position.z + jitterZ },
+                        value: damageDealt,
+                        color: textColor,
+                        lifetime: 1000,
+                        maxLifetime: 1000,
+                        isCritical: sourceTowerType === TowerType.SNIPER || damageDealt > 50
                     });
-                  }
-               }
+                    }
+
+                    nextEffects.push({
+                        id: Math.random().toString(), type: 'SPARK', position: { ...target.position, y: target.position.y + 0.5 },
+                        color: p.color, scale: 0.5, lifetime: 10, maxLifetime: 10
+                    });
+
+                    // Splash Augment (Sniper)
+                    prev.activeAugments.forEach(aug => {
+                        if (aug.type === AugmentType.ON_HIT && aug.effect.special === 'SPLASH_DAMAGE' && aug.effect.target === p.sourceType) {
+                        nextEffects.push({
+                            id: Math.random().toString(), type: 'EXPLOSION', position: target.position,
+                            color: p.color, scale: 1.5, lifetime: 15, maxLifetime: 15
+                        });
+                        nextEnemies.forEach(e => {
+                            if (e.id === target.id) return;
+                            const splashDist = Math.sqrt(Math.pow(e.position.x - target.position.x, 2) + Math.pow(e.position.z - target.position.z, 2));
+                            if (splashDist < 2) {
+                                let splashDmg = p.damage * aug.effect.value;
+                                e.health -= splashDmg;
+                                if (nextDamageNumbers.length < MAX_DAMAGE_NUMBERS) {
+                                        nextDamageNumbers.push({
+                                        id: Math.random().toString(),
+                                        position: { x: e.position.x + (Math.random()-0.5), y: e.position.y + 1, z: e.position.z + (Math.random()-0.5) },
+                                        value: splashDmg,
+                                        color: p.color,
+                                        lifetime: 800, maxLifetime: 800, isCritical: false
+                                        });
+                                    }
+                            }
+                        });
+                        }
+                    });
+                }
             }
+            
+            nextProjectiles.splice(i, 1);
           } else {
             p.position.x += (dx / dist) * moveDist;
             p.position.y += (dy / dist) * moveDist;
             p.position.z += (dz / dist) * moveDist;
           }
         }
+
+        // --- STEP 4.5: ENEMY DEATH & SPLIT LOGIC ---
+        // Clean up dead enemies and handle splitting
+        for (let i = nextEnemies.length - 1; i >= 0; i--) {
+            const e = nextEnemies[i];
+            if (e.health <= 0) {
+                 if (e.isBoss) {
+                   // Trigger Boss Death Sequence
+                   nextPhase = 'BOSS_DEATH';
+                   nextBossDeathTimer = 3500; // 3.5 seconds for animation
+                   nextBossAnnouncement = "TARGET DESTROYED";
+                   // Do not remove boss from array yet
+                 } else {
+                    const stats = ENEMY_STATS[e.type];
+                    
+                    // SPLITTING LOGIC
+                    // @ts-ignore
+                    if (stats.splitsInto) {
+                        // @ts-ignore
+                        const splitConfig = stats.splitsInto;
+                        let damageToMinis = 0;
+                        // Chain Reaction Augment
+                        prev.activeAugments.forEach(aug => {
+                            if (aug.type === AugmentType.ON_HIT && aug.effect.special === 'CHAIN_REACTION') {
+                                // Hard to track exact killing blow dmg here, assuming 50% max HP dmg for now or flat
+                                // Let's use 50% max HP of mini
+                                damageToMinis = ENEMY_STATS[splitConfig.type as EnemyType].health * 0.5;
+                            }
+                        });
+
+                        for (let k = 0; k < splitConfig.count; k++) {
+                            const miniStats = ENEMY_STATS[splitConfig.type as EnemyType];
+                            const offsetX = (Math.random() - 0.5) * 0.5;
+                            const offsetZ = (Math.random() - 0.5) * 0.5;
+                            
+                            nextEnemies.push({
+                                id: Math.random().toString(),
+                                type: splitConfig.type,
+                                health: miniStats.health - damageToMinis,
+                                maxHealth: miniStats.health,
+                                speed: miniStats.speed,
+                                position: { x: e.position.x + offsetX, y: e.position.y, z: e.position.z + offsetZ },
+                                pathId: e.pathId,
+                                waypointIndex: e.waypointIndex,
+                                progress: e.progress
+                            });
+                        }
+                        
+                        nextEffects.push({
+                            id: Math.random().toString(), type: 'NOVA', position: e.position,
+                            color: '#2dd4bf', scale: 1.0, lifetime: 20, maxLifetime: 20
+                        });
+                    }
+
+                    const reward = Math.floor(stats.goldReward * prev.directorGoldBonus);
+                    nextGold += reward;
+                    nextStats.totalGoldEarned += reward; 
+                    nextEnemies.splice(i, 1);
+                    nextEffects.push({
+                        id: Math.random().toString(), type: 'EXPLOSION', position: { ...e.position, y: 0.5 },
+                        color: stats.color, scale: 1, lifetime: 20, maxLifetime: 20
+                    });
+                 }
+            }
+        }
+
 
         // --- STEP 5: EFFECTS & DAMAGE NUMBERS CLEANUP ---
         for (let i = nextEffects.length - 1; i >= 0; i--) {
@@ -676,7 +811,7 @@ const App: React.FC = () => {
           ...prev, enemies: nextEnemies, projectiles: nextProjectiles, towers: nextTowers,
           effects: nextEffects, damageNumbers: nextDamageNumbers, gold: nextGold, lives: nextLives, waveStatus: nextStatus, isGameOver: nextGameOver,
           gamePhase: nextPhase, stageProgress: nextStageProgress, activeBoss: currentBoss || null, bossAnnouncement: nextBossAnnouncement,
-          stats: nextStats
+          stats: nextStats, hazards: nextHazards
         };
       });
     }, TICK_RATE);
@@ -914,6 +1049,7 @@ const App: React.FC = () => {
     setGameState(prev => {
         const nextTowers = [...prev.towers];
         const nextEffects = [...prev.effects];
+        const nextHazards = [...prev.hazards];
         const nextEnemies = prev.enemies.map(e => ({ ...e }));
         const nextDamageNumbers = [...prev.damageNumbers];
         let nextGold = prev.gold;
@@ -951,13 +1087,6 @@ const App: React.FC = () => {
                             value: config.damage, color: config.color, lifetime: 1200, maxLifetime: 1200, isCritical: true
                           });
                         }
-
-                        if (e.health <= 0 && !e.isBoss) { 
-                            const stats = ENEMY_STATS[e.type]; 
-                            const reward = Math.floor(stats.goldReward * prev.directorGoldBonus);
-                            nextGold += reward; 
-                            nextStats.totalGoldEarned += reward;
-                        } 
                     }
                 });
             }
@@ -965,13 +1094,64 @@ const App: React.FC = () => {
                  nextEffects.push({ id: Math.random().toString(), type: 'FREEZE_WAVE', position: tower.position, color: config.color, scale: 0.1, lifetime: 30, maxLifetime: 30 });
                  nextEnemies.forEach(e => { const dist = Math.sqrt(Math.pow(e.position.x - tower.position.x, 2) + Math.pow(e.position.z - tower.position.z, 2)); if (dist <= config.range) e.freezeTimer = config.duration; });
             }
+            if (tower.activeType === ActiveAbilityType.NAPALM) {
+                nextHazards.push({
+                    id: Math.random().toString(), type: 'NAPALM', position: tower.position, radius: config.range || 4, duration: config.duration || 5000, value: config.damage || 50, color: config.color || '#f97316'
+                });
+                nextEffects.push({ id: Math.random().toString(), type: 'NOVA', position: tower.position, color: config.color, scale: 0.1, lifetime: 30, maxLifetime: 30 });
+            }
+            if (tower.activeType === ActiveAbilityType.SINGULARITY) {
+                nextHazards.push({
+                    id: Math.random().toString(), type: 'SINGULARITY', position: tower.position, radius: config.range || 5, duration: config.duration || 4000, value: config.value || 0.1, color: config.color || '#7c3aed'
+                });
+                nextEffects.push({ id: Math.random().toString(), type: 'NOVA', position: tower.position, color: config.color, scale: 0.1, lifetime: 30, maxLifetime: 30 });
+            }
+            if (tower.activeType === ActiveAbilityType.BARRAGE) {
+                // Should fire multiple shots. Simplification: Instantly fire count projectiles.
+                const count = config.count || 3;
+                const interval = config.interval || 200;
+                // Since this function is sync, we can't easily schedule state updates for future ticks cleanly inside setState.
+                // Workaround: Instant spread shots. Or just spawn them all now.
+                // Let's spawn projectiles directly.
+                const tStats = TOWER_STATS[tower.type];
+                 const candidates = nextEnemies.filter(enemy => {
+                     const dist = Math.sqrt(Math.pow(enemy.position.x - tower.position.x, 2) + Math.pow(enemy.position.z - tower.position.z, 2));
+                     return dist <= tower.range;
+                 });
+                 if (candidates.length > 0) {
+                     for (let k=0; k<count; k++) {
+                         // Pick random target or same
+                         const target = candidates[k % candidates.length];
+                          // Apply Augment for Artillery radius
+                        let blastRadius = tStats.blastRadius || 0;
+                        if (tower.type === TowerType.ARTILLERY) {
+                            prev.activeAugments.forEach(aug => {
+                                if (aug.type === AugmentType.STAT_BUFF && aug.effect.special === 'CLUSTER_MUNITIONS') {
+                                    blastRadius *= (1 + aug.effect.value);
+                                }
+                            });
+                        }
+                        
+                         prev.projectiles.push({
+                            id: Math.random().toString(),
+                            position: { ...tower.position, y: 0.8 },
+                            targetId: target.id,
+                            damage: tower.damage,
+                            speed: tStats.projectileSpeed || 0.5,
+                            color: tStats.color,
+                            sourceType: tower.type,
+                            blastRadius
+                        });
+                     }
+                 }
+            }
+            
             if (tower.activeType === ActiveAbilityType.OVERCLOCK) nextTowers[towerIndex].abilityDuration = config.duration;
         });
 
         if (abilityTriggered) nextStats.abilitiesUsed++;
 
-        const survivingEnemies = nextEnemies.filter(e => e.health > 0 || e.isBoss);
-        return { ...prev, towers: nextTowers, enemies: survivingEnemies, effects: nextEffects, damageNumbers: nextDamageNumbers, gold: nextGold, stats: nextStats };
+        return { ...prev, towers: nextTowers, enemies: nextEnemies, effects: nextEffects, damageNumbers: nextDamageNumbers, gold: nextGold, stats: nextStats, hazards: nextHazards };
     });
   };
 
@@ -1026,8 +1206,8 @@ const App: React.FC = () => {
              }
           });
 
-          const survivingEnemies = nextEnemies.filter(e => e.health > 0 || e.isBoss);
-          return { ...prev, towers: nextTowers, enemies: survivingEnemies, effects: nextEffects, damageNumbers: nextDamageNumbers, gold: nextGold, targetingAbility: null, stats: nextStats };
+          // Cleanup handled by loop
+          return { ...prev, towers: nextTowers, enemies: nextEnemies, effects: nextEffects, damageNumbers: nextDamageNumbers, gold: nextGold, targetingAbility: null, stats: nextStats };
       });
   };
 
@@ -1054,10 +1234,14 @@ const App: React.FC = () => {
 
       const towersToTrigger = currentGameState.towers.filter(t => {
           if (t.activeType !== activeType || t.abilityCooldown > 0 || (t.disabledTimer && t.disabledTimer > 0)) return false;
-          return currentGameState.enemies.some(enemy => {
-              const dist = Math.sqrt(Math.pow(enemy.position.x - t.position.x, 2) + Math.pow(enemy.position.z - t.position.z, 2));
-              return dist <= t.range;
-          });
+          // For self-centered AOE abilities like Napalm/Singularity, check if enemies are in range
+          if (activeType === ActiveAbilityType.NAPALM || activeType === ActiveAbilityType.SINGULARITY || activeType === ActiveAbilityType.BARRAGE || activeType === ActiveAbilityType.ERUPTION || activeType === ActiveAbilityType.FREEZE) {
+                return currentGameState.enemies.some(enemy => {
+                    const dist = Math.sqrt(Math.pow(enemy.position.x - t.position.x, 2) + Math.pow(enemy.position.z - t.position.z, 2));
+                    return dist <= t.range; // Use tower range or ability range
+                });
+          }
+          return true; // Overclock always triggers
       });
 
       if (towersToTrigger.length === 0) return;
@@ -1071,6 +1255,16 @@ const App: React.FC = () => {
         if (e.key === '2') handleBatchTriggerAbility(ActiveAbilityType.OVERCLOCK);
         if (e.key === '3') handleBatchTriggerAbility(ActiveAbilityType.FREEZE);
         if (e.key === '4') handleBatchTriggerAbility(ActiveAbilityType.ORBITAL_STRIKE);
+        
+        // New hotkeys for Artillery Abilities? Reusing slots for now or adding more.
+        // Let's map them to same slots if they are analogous?
+        // ERUPTION slot -> NAPALM
+        // OVERCLOCK slot -> BARRAGE
+        // FREEZE slot -> SINGULARITY
+        if (e.key === '1') handleBatchTriggerAbility(ActiveAbilityType.NAPALM);
+        if (e.key === '2') handleBatchTriggerAbility(ActiveAbilityType.BARRAGE);
+        if (e.key === '3') handleBatchTriggerAbility(ActiveAbilityType.SINGULARITY);
+
         if (e.key === 'Escape') {
              setPendingPlacement(null);
              setGameState(prev => ({ ...prev, selectedTowerId: null, targetingAbility: null }));
@@ -1175,15 +1369,19 @@ const App: React.FC = () => {
         const newPassive = modifiers.passive || tower.passiveType;
         
         let newActive = modifiers.active || tower.activeType;
-        if (newActive === ActiveAbilityType.ERUPTION) {
-           if (tower.type === TowerType.SNIPER) {
-               newActive = ActiveAbilityType.ORBITAL_STRIKE;
-           }
+        // Overrides based on Tower Type
+        if (tower.type === TowerType.SNIPER) {
+             if (newActive === ActiveAbilityType.ERUPTION) newActive = ActiveAbilityType.ORBITAL_STRIKE;
+             // Plasma/Void defaults ok
+        } else if (tower.type === TowerType.ARTILLERY) {
+             if (newActive === ActiveAbilityType.ERUPTION) newActive = ActiveAbilityType.NAPALM;
+             if (newActive === ActiveAbilityType.OVERCLOCK) newActive = ActiveAbilityType.BARRAGE;
+             if (newActive === ActiveAbilityType.FREEZE) newActive = ActiveAbilityType.SINGULARITY;
         }
 
         let maxCd = 0; if (newActive !== ActiveAbilityType.NONE) {
             // @ts-ignore
-            maxCd = ABILITY_CONFIG[newActive].cooldown;
+            maxCd = ABILITY_CONFIG[newActive]?.cooldown || 20000;
         }
         const newTower: Tower = {
             ...tower, level: nextLevel, techPath: targetPath, baseDamage: newBaseDamage, baseFireRate: newBaseFireRate,
@@ -1257,6 +1455,7 @@ const App: React.FC = () => {
       projectiles: [],
       effects: [],
       damageNumbers: [],
+      hazards: [],
       gameSpeed: 1,
       isGameOver: false,
       waveStatus: 'IDLE',

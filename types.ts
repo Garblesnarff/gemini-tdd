@@ -9,7 +9,9 @@ export enum EnemyType {
   BASIC = 'BASIC',
   FAST = 'FAST',
   TANK = 'TANK',
-  BOSS = 'BOSS'
+  BOSS = 'BOSS',
+  SPLITTER = 'SPLITTER',
+  SPLITTER_MINI = 'SPLITTER_MINI'
 }
 
 export interface DamageNumber {
@@ -45,7 +47,8 @@ export interface Enemy {
 export enum TowerType {
   BASIC = 'BASIC',
   SNIPER = 'SNIPER',
-  FAST = 'FAST'
+  FAST = 'FAST',
+  ARTILLERY = 'ARTILLERY'
 }
 
 export enum TechPath {
@@ -67,7 +70,10 @@ export enum ActiveAbilityType {
   ERUPTION = 'ERUPTION',   // Magma Lvl 3 (Basic/Fast)
   ORBITAL_STRIKE = 'ORBITAL_STRIKE', // Magma Lvl 3 (Sniper)
   OVERCLOCK = 'OVERCLOCK', // Plasma Lvl 3
-  FREEZE = 'FREEZE'        // Void Lvl 3
+  FREEZE = 'FREEZE',       // Void Lvl 3
+  NAPALM = 'NAPALM',       // Magma Lvl 3 (Artillery)
+  BARRAGE = 'BARRAGE',     // Plasma Lvl 3 (Artillery)
+  SINGULARITY = 'SINGULARITY' // Void Lvl 3 (Artillery)
 }
 
 export enum TargetPriority {
@@ -93,7 +99,7 @@ export interface Augment {
     value: number;
     target?: TowerType | 'ALL';
     techTarget?: TechPath; 
-    special?: 'INTEREST' | 'SPLASH_DAMAGE';
+    special?: 'INTEREST' | 'SPLASH_DAMAGE' | 'CLUSTER_MUNITIONS' | 'CHAIN_REACTION' | 'BOMBARDMENT';
   };
 }
 
@@ -129,6 +135,7 @@ export interface Projectile {
   speed: number;
   color: string;
   sourceType: TowerType;
+  blastRadius?: number; // For Artillery
 }
 
 export interface Effect {
@@ -140,6 +147,16 @@ export interface Effect {
   lifetime: number; 
   maxLifetime: number; 
   text?: string;
+}
+
+export interface Hazard {
+    id: string;
+    type: 'NAPALM' | 'SINGULARITY';
+    position: Vector3Tuple;
+    radius: number;
+    duration: number; // ms
+    value: number; // damage per tick or pull force
+    color: string;
 }
 
 // --- NEW STAGE & BOSS TYPES ---
@@ -274,6 +291,7 @@ export interface GameState {
   projectiles: Projectile[];
   effects: Effect[];
   damageNumbers: DamageNumber[];
+  hazards: Hazard[];
   gameSpeed: number; 
   isGameOver: boolean;
   waveStatus: 'IDLE' | 'SPAWNING' | 'CLEARING';

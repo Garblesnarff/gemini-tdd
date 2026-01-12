@@ -116,7 +116,7 @@ const STAGE_3_BOSS: BossConfig = {
     ],
     minionSpawns: [
         { triggerHealth: 0.8, enemyType: EnemyType.BASIC, count: 10, announcement: "Swarm Deployed" },
-        { triggerHealth: 0.5, enemyType: EnemyType.BASIC, count: 15, announcement: "Massive Swarm Detected" },
+        { triggerHealth: 0.5, enemyType: EnemyType.SPLITTER, count: 6, announcement: "Splitters Inbound" },
         { triggerHealth: 0.25, enemyType: EnemyType.FAST, count: 10, announcement: "Fastlings Inbound" }
     ]
 };
@@ -166,7 +166,7 @@ const STAGE_5_BOSS: BossConfig = {
         { id: 'spawn_void', name: 'Void Spawn', type: BossAbilityType.SPAWN_MINIONS, cooldown: 25000 }
     ],
     minionSpawns: [
-        { triggerHealth: 0.9, enemyType: EnemyType.BASIC, count: 10, announcement: "Voidlings Emerging" },
+        { triggerHealth: 0.9, enemyType: EnemyType.SPLITTER, count: 8, announcement: "Void Entities Splitting" },
         { triggerHealth: 0.6, enemyType: EnemyType.FAST, count: 15, announcement: "Reality Destabilized" },
         { triggerHealth: 0.3, enemyType: EnemyType.TANK, count: 5, announcement: "Heavy Void Constructs" }
     ]
@@ -295,29 +295,33 @@ export const getWaveDefinition = (stageId: StageId, waveNumber: number): WaveDef
     // Generic generator for higher stages to scale difficulty
     const generateGenericWave = (wave: number, baseScale: number): WaveDefinition => {
         const groups: WaveGroup[] = [];
-        const scaleMult = 1 + (baseScale * 0.1); // Slightly harder per stage
+        const scaleMult = 1 + (baseScale * 0.1); 
         
         // Intro Phase (1-5)
         if (wave <= 5) {
              groups.push({ type: EnemyType.BASIC, count: Math.floor((5 + wave * 2) * scaleMult), interval: 1000 - (wave * 50) });
+             if (wave === 3) groups.push({ type: EnemyType.SPLITTER, count: 2, interval: 2000, wait: 2000 });
              return { composition: groups, intel: "Initial probing wave." };
         }
         // Speed Phase (6-10)
         if (wave <= 10) {
              groups.push({ type: EnemyType.BASIC, count: Math.floor(10 * scaleMult), interval: 800 });
              groups.push({ type: EnemyType.FAST, count: Math.floor((wave - 4) * 2 * scaleMult), interval: 500, wait: 2000 });
-             return { composition: groups, intel: "Fast units detected." };
+             if (wave >= 8) groups.push({ type: EnemyType.SPLITTER, count: Math.floor(3 * scaleMult), interval: 1500, wait: 3000 });
+             return { composition: groups, intel: "Fast units and Splitters detected." };
         }
         // Heavy Phase (11-15)
         if (wave <= 15) {
              groups.push({ type: EnemyType.BASIC, count: Math.floor(15 * scaleMult), interval: 700 });
              groups.push({ type: EnemyType.TANK, count: Math.floor((wave - 10) * scaleMult), interval: 2500, wait: 3000 });
-             return { composition: groups, intel: "Heavy armor approaching." };
+             groups.push({ type: EnemyType.SPLITTER, count: Math.floor(5 * scaleMult), interval: 1500, wait: 1000 });
+             return { composition: groups, intel: "Heavy armor and replication units approaching." };
         }
         // Mixed Phase (16-20)
         if (wave <= 20) {
             groups.push({ type: EnemyType.FAST, count: Math.floor(15 * scaleMult), interval: 400 });
             groups.push({ type: EnemyType.TANK, count: Math.floor(3 * scaleMult) + Math.floor((wave-15)/2), interval: 2000, wait: 2000 });
+            groups.push({ type: EnemyType.SPLITTER, count: Math.floor(8 * scaleMult), interval: 1200, wait: 1000 });
             return { composition: groups, intel: "Mixed unit composition." };
         }
         // Swarm Phase (21+)
@@ -325,6 +329,7 @@ export const getWaveDefinition = (stageId: StageId, waveNumber: number): WaveDef
         groups.push({ type: EnemyType.BASIC, count: Math.floor((20 + lateScale * 5) * scaleMult), interval: 400 });
         groups.push({ type: EnemyType.TANK, count: Math.floor((3 + lateScale) * scaleMult), interval: 1500, wait: 5000 });
         groups.push({ type: EnemyType.FAST, count: Math.floor((10 + lateScale * 2) * scaleMult), interval: 300, wait: 2000 });
+        groups.push({ type: EnemyType.SPLITTER, count: Math.floor((5 + lateScale) * scaleMult), interval: 1000, wait: 3000 });
 
         return { composition: groups, intel: "High intensity wave detected." };
     };
@@ -383,56 +388,55 @@ export const getWaveDefinition = (stageId: StageId, waveNumber: number): WaveDef
 };
 
 export const TACTICAL_INTEL_POOL = [
-  "Massive heat signatures detected in the sub-sector. Prepare for heavy resistance.",
-  "Enemy cloaking tech detected. Scanners are struggling to lock on target.",
-  "Scout reports indicate high-speed units approaching from the North-East gate.",
-  "Atmospheric interference is high. Tower target acquisition might be sluggish.",
-  "Energy readings spiking. A high-priority target is leading this assault.",
-  "Sub-space ripples detected. Expect unconventional movement patterns.",
-  "Armor plating on incoming units is reinforced. Focus on high-damage output.",
-  "Intercepted comms suggest a multi-pronged attack. Watch the mid-path.",
-  "Power grid fluctuating. Keep a reserve of gold for emergency deployments.",
-  "Biological signatures mixed with cybernetics. The swarm is evolving.",
-  "Void readings are off the charts. Void Tech towers will perform well here.",
-  "Magma Tech is recommended for this wave's heavy armor configuration.",
-  "Plasma Tech overclocking is advised to handle the upcoming swarm density.",
-  "Enemy formations are tightly packed. Splash damage will be highly effective.",
-  "Long-range scanners show a breach in the outer perimeter. They're coming.",
-  "Strategic tip: Neighboring towers benefit most from Magma and Plasma auras.",
-  "Warning: Incoming 'Fast' class units. Ensure fire rate is optimized.",
-  "Intelligence reports a 'Tank' unit leading the column. Prepare for a slog.",
-  "Gravity fields are weakening. Void Tech fields may be necessary to compensate.",
-  "Sensors picking up residual radiation. Shielding systems are at 80%.",
-  "The enemy is using recursive logic. Expect sudden speed bursts.",
-  "Target the leader. Breaking their formation will slow the remaining units.",
-  "Don't forget to sell underperforming towers. 70% refund is guaranteed.",
-  "System patch event approaching. Strategize for long-term enhancements.",
-  "Aura stacking is the key to holding this sector. Place towers in clusters.",
-  "Incoming transmission: 'The core must not fall. Hold the line at all costs.'",
-  "Seismic activity detected. Ground-based enemies are moving in force.",
-  "Optical sensors are blinded by solar flare. Rely on automated tracking.",
-  "Enemy shields are tuned to high frequencies. Plasma rounds might struggle.",
-  "A heavy boss unit is being assembled at the jump-point. Prepare.",
-  "Low-orbit satellite shows a massive influx of 'Basic' class drones.",
-  "Tactical oversight: Sniper towers are wasted on fast, low-health units.",
-  "Deploy Fast towers at the chokepoints to maximize their fire rate.",
-  "The Magma Eruption protocol is ready. Use it when the path is crowded.",
-  "Time Stop protocol detected in Void Tech. Save it for the fastest units.",
-  "Overclock protocol will drain local heat sinks. Use it during peak waves.",
-  "Scanners indicate a weakness in enemy rear-guard plating.",
-  "Maintain defensive depth. Don't put all your firepower at the start.",
-  "Economic update: Interest rates are high. Save gold if you can afford to.",
-  "The enemy has mapped our static defenses. Consider repositioning.",
-  "Biological swarms are weak to rapid-fire plasma bursts.",
-  "Heavy machinery detected. Kinetic impact (Magma) is the most efficient counter.",
-  "Void resonance is high. Sniper towers gain additional focus here.",
-  "Intercepted: 'Protocol X is in effect. Move all units to the target zone.'",
-  "Sensors are failing. We're going in blind, Commander. Good luck.",
-  "The swarm is learning. They've adjusted their pathing slightly.",
-  "Energy spikes detected in the perimeter towers. Augments are active.",
-  "Intelligence suggests a 'Boss' unit will appear in wave 5 and multiples of 5.",
-  "The final line of defense is holding, but only just. Reinforce the back.",
-  "Tactical Tip: Prioritize 'Strongest' targets with your heavy hitters."
+  "Massive heat signatures detected. Prepare for heavy resistance.",
+  "Enemy cloaking tech detected. Scanners struggling.",
+  "High-speed units approaching from the North-East gate.",
+  "Atmospheric interference high. Target acquisition sluggish.",
+  "Energy readings spiking. High-priority target inbound.",
+  "Sub-space ripples detected. Unconventional movement expected.",
+  "Armor plating reinforced. Focus on high-damage output.",
+  "Intercepted comms suggest multi-pronged attack.",
+  "Power grid fluctuating. Keep reserve gold.",
+  "Biological signatures mixed with cybernetics. Swarm evolving.",
+  "Void readings off the charts. Void Tech recommended.",
+  "Magma Tech recommended for heavy armor.",
+  "Plasma Tech overclocking advised for swarms.",
+  "Enemy formations tightly packed. Splash damage effective.",
+  "Breach in outer perimeter. They're coming.",
+  "Neighboring towers benefit from Magma/Plasma auras.",
+  "Incoming 'Fast' class units. Optimize fire rate.",
+  "'Tank' unit leading the column. Prepare for a slog.",
+  "Gravity fields weakening. Void Tech may compensate.",
+  "Sensors picking up residual radiation.",
+  "Recursive logic detected. Expect speed bursts.",
+  "Target the leader. Break formation.",
+  "Sell underperforming towers. 70% refund.",
+  "System patch event approaching.",
+  "Aura stacking key to holding sector.",
+  "The core must not fall.",
+  "Seismic activity detected.",
+  "Optical sensors blinded. Rely on tracking.",
+  "Enemy shields tuned high. Plasma may struggle.",
+  "Boss unit assembling at jump-point.",
+  "Massive influx of 'Basic' drones.",
+  "Sniper towers wasted on fast units.",
+  "Deploy Fast towers at chokepoints.",
+  "Magma Eruption protocol ready.",
+  "Time Stop protocol detected.",
+  "Overclock protocol draining heat sinks.",
+  "Weakness in enemy rear-guard plating.",
+  "Maintain defensive depth.",
+  "Interest rates high. Save gold.",
+  "Enemy mapped static defenses. Reposition.",
+  "Swarms weak to plasma bursts.",
+  "Heavy machinery detected. Use Magma.",
+  "Void resonance high. Snipers gain focus.",
+  "Protocol X in effect.",
+  "Sensors failing. Going in blind.",
+  "Swarm learning. Pathing adjusted.",
+  "Energy spikes in perimeter towers.",
+  "Splitter units detected. Prepare AOE countermeasures.",
+  "Artillery recommended for dense clusters."
 ];
 
 export const AUGMENT_POOL: Augment[] = [
@@ -499,6 +503,30 @@ export const AUGMENT_POOL: Augment[] = [
     rarity: 'COMMON',
     type: AugmentType.STAT_BUFF,
     effect: { stat: 'range', value: 0.15, target: 'ALL' }
+  },
+  {
+      id: 'cluster_munitions',
+      name: 'Cluster Munitions',
+      description: '+50% Blast Radius for Artillery towers.',
+      rarity: 'RARE',
+      type: AugmentType.STAT_BUFF,
+      effect: { value: 0.5, target: TowerType.ARTILLERY, special: 'CLUSTER_MUNITIONS' }
+  },
+  {
+      id: 'chain_reaction',
+      name: 'Chain Reaction',
+      description: 'Splitter minis take 50% damage on spawn.',
+      rarity: 'LEGENDARY',
+      type: AugmentType.ON_HIT,
+      effect: { value: 0.5, special: 'CHAIN_REACTION' }
+  },
+  {
+      id: 'bombardment_protocol',
+      name: 'Bombardment Protocol',
+      description: 'Artillery +30% Damage, -20% Fire Rate.',
+      rarity: 'RARE',
+      type: AugmentType.STAT_BUFF,
+      effect: { value: 0.3, target: TowerType.ARTILLERY, special: 'BOMBARDMENT' }
   }
 ];
 
@@ -531,6 +559,26 @@ export const ABILITY_CONFIG = {
     range: 6, 
     cooldown: 30000, 
     color: '#8b5cf6'
+  },
+  [ActiveAbilityType.NAPALM]: {
+      damage: 100, // Per tick
+      duration: 5000,
+      range: 4,
+      cooldown: 25000,
+      color: '#f97316'
+  },
+  [ActiveAbilityType.BARRAGE]: {
+      count: 3,
+      interval: 200,
+      cooldown: 15000,
+      color: '#22d3ee'
+  },
+  [ActiveAbilityType.SINGULARITY]: {
+      range: 6,
+      duration: 3000,
+      cooldown: 30000,
+      value: 0.1, // Pull strength
+      color: '#7c3aed'
   }
 };
 
@@ -564,7 +612,7 @@ export const TECH_PATH_INFO = {
     icon: 'Swords',
     abilities: [
         'Passive: Ignition Aura (Neighbors +25% DMG)',
-        'Active: Eruption / Orbital Strike'
+        'Active: Eruption / Orbital Strike / Napalm'
     ]
   },
   [TechPath.PLASMA]: { 
@@ -574,7 +622,7 @@ export const TECH_PATH_INFO = {
     icon: 'Zap',
     abilities: [
         'Passive: Flux Network (Neighbors +25% Fire Rate)',
-        'Active: Overclock (Self 3x Fire Rate)'
+        'Active: Overclock / Barrage'
     ]
   },
   [TechPath.VOID]: { 
@@ -584,7 +632,7 @@ export const TECH_PATH_INFO = {
     icon: 'Eye',
     abilities: [
         'Passive: Gravity Field (Slows Enemies)',
-        'Active: Time Stop (Freezes Enemies)'
+        'Active: Time Stop / Singularity'
     ]
   }
 };
@@ -595,21 +643,33 @@ export const TOWER_STATS = {
     range: 4,
     fireRate: 1,
     damage: 20,
-    color: '#3b82f6'
+    color: '#3b82f6',
+    projectileSpeed: 0.5
   },
   [TowerType.SNIPER]: {
     cost: 250,
     range: 8,
     fireRate: 0.4,
     damage: 60,
-    color: '#ef4444'
+    color: '#ef4444',
+    projectileSpeed: 1.0
   },
   [TowerType.FAST]: {
     cost: 150,
     range: 3,
     fireRate: 3,
     damage: 8,
-    color: '#10b981'
+    color: '#10b981',
+    projectileSpeed: 0.6
+  },
+  [TowerType.ARTILLERY]: {
+      cost: 350,
+      range: 6,
+      fireRate: 0.25,
+      damage: 80,
+      color: '#f59e0b',
+      blastRadius: 2.5,
+      projectileSpeed: 0.2
   }
 };
 
@@ -637,5 +697,18 @@ export const ENEMY_STATS = {
     speed: 0.6,
     goldReward: 200,
     color: '#be123c'
+  },
+  [EnemyType.SPLITTER]: {
+      health: 80,
+      speed: 1.2,
+      goldReward: 20,
+      color: '#14b8a6',
+      splitsInto: { type: EnemyType.SPLITTER_MINI, count: 3 }
+  },
+  [EnemyType.SPLITTER_MINI]: {
+      health: 25,
+      speed: 2.5,
+      goldReward: 5,
+      color: '#5eead4'
   }
 };

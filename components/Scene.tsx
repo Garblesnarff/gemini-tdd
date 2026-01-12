@@ -3,7 +3,7 @@ import React, { useState, useRef, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Stars, Sky, Environment, Box, Cylinder, Sphere, Float, Sparkles, Icosahedron, Ring, Html, Text, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
-import { GameState, TowerType, Vector3Tuple, EnemyType, Tower, Enemy, TechPath, Effect, PassiveType, ActiveAbilityType, Boss, StageEnvironment, DamageNumber } from '../types';
+import { GameState, TowerType, Vector3Tuple, EnemyType, Tower, Enemy, TechPath, Effect, PassiveType, ActiveAbilityType, Boss, StageEnvironment, DamageNumber, Hazard } from '../types';
 import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, TECH_PATH_INFO, ABILITY_CONFIG } from '../constants';
 
 interface SceneProps {
@@ -206,6 +206,41 @@ const FreezeEffect: React.FC<{ position: Vector3Tuple, color: string, progress: 
   );
 };
 
+const HazardsRenderer: React.FC<{ hazards: Hazard[] }> = ({ hazards }) => {
+    return (
+        <>
+            {hazards.map(h => (
+                <group key={h.id} position={[h.position.x, 0, h.position.z]}>
+                    <mesh rotation={[-Math.PI/2, 0, 0]} position={[0, 0.02, 0]}>
+                         <ringGeometry args={[h.radius * 0.9, h.radius, 32]} />
+                         <meshBasicMaterial color={h.color} opacity={0.5} transparent />
+                    </mesh>
+                    <mesh rotation={[-Math.PI/2, 0, 0]} position={[0, 0.01, 0]}>
+                         <circleGeometry args={[h.radius, 32]} />
+                         <meshBasicMaterial color={h.color} opacity={0.1} transparent />
+                    </mesh>
+                    {h.type === 'NAPALM' && (
+                         <Sparkles count={20 * h.radius} scale={h.radius * 2} size={5} color={h.color} speed={0.5} opacity={0.5} />
+                    )}
+                    {h.type === 'SINGULARITY' && (
+                        <group>
+                            <mesh>
+                                <sphereGeometry args={[0.5, 16, 16]} />
+                                <meshBasicMaterial color="#000" />
+                            </mesh>
+                            <mesh>
+                                <sphereGeometry args={[0.6, 16, 16]} />
+                                <meshBasicMaterial color={h.color} transparent opacity={0.5} wireframe />
+                            </mesh>
+                             <Sparkles count={30} scale={h.radius * 1.5} size={3} color={h.color} speed={2} opacity={0.5} noise={1} />
+                        </group>
+                    )}
+                </group>
+            ))}
+        </>
+    );
+};
+
 // --- DAMAGE NUMBERS RENDERER ---
 
 const DamageNumbersRenderer: React.FC<{ damageNumbers: DamageNumber[] }> = ({ damageNumbers }) => {
@@ -387,6 +422,10 @@ const BossUnit: React.FC<{ boss: Boss, isDying: boolean }> = ({ boss, isDying })
 const EnemyUnit: React.FC<{ enemy: Enemy }> = ({ enemy }) => {
     const [hovered, setHovered] = useState(false);
     
+    // Geometry based on type
+    const isSplitter = enemy.type === EnemyType.SPLITTER;
+    const isMini = enemy.type === EnemyType.SPLITTER_MINI;
+    
     return (
         <group 
             position={[enemy.position.x, enemy.position.y + 0.5, enemy.position.z]}
@@ -394,13 +433,33 @@ const EnemyUnit: React.FC<{ enemy: Enemy }> = ({ enemy }) => {
             onPointerOut={() => setHovered(false)}
         >
             <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
-                <Box args={[0.6, 0.6, 0.6]} castShadow>
-                <meshStandardMaterial 
-                    color={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color} 
-                    emissive={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color}
-                    emissiveIntensity={enemy.freezeTimer && enemy.freezeTimer > 0 ? 0.8 : 0.5}
-                />
-                </Box>
+                {isSplitter ? (
+                    <mesh castShadow>
+                        <dodecahedronGeometry args={[0.35]} />
+                        <meshStandardMaterial 
+                            color={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color} 
+                            emissive={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color}
+                            emissiveIntensity={0.5}
+                        />
+                    </mesh>
+                ) : isMini ? (
+                    <mesh castShadow>
+                         <dodecahedronGeometry args={[0.2]} />
+                         <meshStandardMaterial 
+                            color={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color} 
+                            emissive={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color}
+                            emissiveIntensity={0.5}
+                         />
+                    </mesh>
+                ) : (
+                    <Box args={[0.6, 0.6, 0.6]} castShadow>
+                        <meshStandardMaterial 
+                            color={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color} 
+                            emissive={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color}
+                            emissiveIntensity={enemy.freezeTimer && enemy.freezeTimer > 0 ? 0.8 : 0.5}
+                        />
+                    </Box>
+                )}
             </Float>
             <mesh position={[0, 0.8, 0]}>
                 <planeGeometry args={[0.8, 0.1]} />
@@ -443,7 +502,7 @@ const TowerUnit: React.FC<{
     ? TECH_PATH_INFO[tower.techPath].color 
     : stats.color;
 
-  const baseHeight = 0.5;
+  const baseHeight = tower.type === TowerType.ARTILLERY ? 0.3 : 0.5;
   const lvl2Height = tower.level >= 2 ? 0.4 : 0;
   const lvl3Height = tower.level >= 3 ? 0.4 : 0;
   const totalHeight = baseHeight + lvl2Height + lvl3Height;
@@ -481,6 +540,11 @@ const TowerUnit: React.FC<{
         while (diff > Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
         turretRef.current.rotation.y += diff * 10 * delta;
+        
+        // Tilt barrel for artillery
+        if (tower.type === TowerType.ARTILLERY) {
+            turretRef.current.rotation.x = -Math.PI / 4;
+        }
       }
     }
 
@@ -591,8 +655,8 @@ const TowerUnit: React.FC<{
        </mesh>
       )}
 
-      <mesh position={[0, 0.25, 0]} castShadow receiveShadow>
-        <boxGeometry args={[0.8, baseHeight, 0.8]} />
+      <mesh position={[0, baseHeight/2, 0]} castShadow receiveShadow>
+        <cylinderGeometry args={[0.4, 0.5, baseHeight, 6]} />
         <meshStandardMaterial color="#1e293b" metalness={0.8} roughness={0.2} />
       </mesh>
       
@@ -619,20 +683,37 @@ const TowerUnit: React.FC<{
       )}
       
       <group ref={turretRef} position={[0, turretY, 0]}>
-        <mesh position={[0, 0, 0]} castShadow>
-             <cylinderGeometry args={[0.3, 0.4, 0.2, 8]} />
-             <meshStandardMaterial color={displayColor} emissive={displayColor} emissiveIntensity={isDisabled ? 0 : 0.2} />
-        </mesh>
-
-        <mesh position={[0, 0.25, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
-          <cylinderGeometry args={[0.08, 0.08, 0.8]} />
-          <meshStandardMaterial color="#334155" metalness={0.8} />
-        </mesh>
+        {tower.type === TowerType.ARTILLERY ? (
+            // Artillery Model
+            <group>
+                 <mesh rotation={[Math.PI/2, 0, 0]}>
+                    <cylinderGeometry args={[0.3, 0.4, 0.6]} />
+                    <meshStandardMaterial color={displayColor} />
+                 </mesh>
+                 <mesh position={[0, 0.3, 0]} rotation={[Math.PI/2, 0, 0]}>
+                     <cylinderGeometry args={[0.15, 0.15, 0.8]} />
+                     <meshStandardMaterial color="#333" />
+                 </mesh>
+            </group>
+        ) : (
+            // Standard Turret
+            <group>
+                <mesh position={[0, 0, 0]} castShadow>
+                     <cylinderGeometry args={[0.3, 0.4, 0.2, 8]} />
+                     <meshStandardMaterial color={displayColor} emissive={displayColor} emissiveIntensity={isDisabled ? 0 : 0.2} />
+                </mesh>
         
-        <mesh position={[0, 0.25, 0.4]} rotation={[Math.PI / 2, 0, 0]}>
-           <cylinderGeometry args={[0.1, 0.1, 0.1]} />
-           <meshStandardMaterial color="#0f172a" />
-        </mesh>
+                <mesh position={[0, 0.25, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+                  <cylinderGeometry args={[0.08, 0.08, 0.8]} />
+                  <meshStandardMaterial color="#334155" metalness={0.8} />
+                </mesh>
+                
+                <mesh position={[0, 0.25, 0.4]} rotation={[Math.PI / 2, 0, 0]}>
+                   <cylinderGeometry args={[0.1, 0.1, 0.1]} />
+                   <meshStandardMaterial color="#0f172a" />
+                </mesh>
+            </group>
+        )}
 
         {tower.techPath === TechPath.MAGMA && (
              <group position={[0, 0.4, 0]}>
@@ -873,6 +954,8 @@ const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, s
             })}
           </group>
       ))}
+      
+      <HazardsRenderer hazards={gameState.hazards} />
 
       {gameState.enemies.map(enemy => (
         enemy.isBoss ? (
@@ -893,8 +976,8 @@ const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, s
       ))}
 
       {gameState.projectiles.map(p => (
-        <Sphere key={p.id} args={[0.15]} position={[p.position.x, p.position.y, p.position.z]}>
-          <meshStandardMaterial color="#fbbf24" emissive="#fbbf24" emissiveIntensity={2} />
+        <Sphere key={p.id} args={[p.sourceType === TowerType.ARTILLERY ? 0.25 : 0.15]} position={[p.position.x, p.position.y, p.position.z]}>
+          <meshStandardMaterial color={p.color} emissive={p.color} emissiveIntensity={2} />
         </Sphere>
       ))}
       
