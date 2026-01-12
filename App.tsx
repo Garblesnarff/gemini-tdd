@@ -3,13 +3,14 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars, Sky, Environment, Float, Text } from '@react-three/drei';
 import * as THREE from 'three';
-import { GameState, Enemy, Tower, Projectile, Effect, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType, StageId, Boss, BossAbilityType } from './types';
-import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL, STAGE_CONFIGS, getWaveDefinition, INITIAL_STAGE_PROGRESS } from './constants';
+import { GameState, Enemy, Tower, Projectile, Effect, DamageNumber, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType, StageId, Boss, BossAbilityType } from './types';
+import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL, STAGE_CONFIGS, getWaveDefinition, INITIAL_STAGE_PROGRESS, TECH_PATH_INFO } from './constants';
 import HUD from './components/HUD';
 import Scene from './components/Scene';
 import { saveGame, loadGame, clearSave, hasSaveData } from './saveSystem';
 
 const TICK_RATE = 50; 
+const MAX_DAMAGE_NUMBERS = 60;
 
 const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>({
@@ -20,6 +21,7 @@ const App: React.FC = () => {
     towers: [],
     projectiles: [],
     effects: [],
+    damageNumbers: [],
     gameSpeed: 1,
     isGameOver: false,
     waveStatus: 'IDLE',
@@ -87,6 +89,7 @@ const App: React.FC = () => {
         const nextProjectiles = [...prev.projectiles];
         const nextTowers = [...prev.towers];
         const nextEffects = [...prev.effects];
+        const nextDamageNumbers = [...prev.damageNumbers];
         let nextGold = prev.gold;
         let nextLives = prev.lives;
         let nextStatus = prev.waveStatus;
@@ -370,6 +373,29 @@ const App: React.FC = () => {
 
             if (!isImmune) {
                 target.health -= damageDealt;
+
+                // --- SPAWN DAMAGE NUMBER ---
+                if (nextDamageNumbers.length < MAX_DAMAGE_NUMBERS) {
+                  const sourceTowerType = p.sourceType;
+                  let textColor = '#ffffff';
+                  if (sourceTowerType === TowerType.SNIPER) textColor = '#ef4444';
+                  else if (sourceTowerType === TowerType.FAST) textColor = '#10b981';
+                  
+                  // Jitter
+                  const jitterX = (Math.random() - 0.5) * 0.8;
+                  const jitterZ = (Math.random() - 0.5) * 0.8;
+
+                  nextDamageNumbers.push({
+                    id: Math.random().toString(),
+                    position: { x: target.position.x + jitterX, y: target.position.y + 0.8, z: target.position.z + jitterZ },
+                    value: damageDealt,
+                    color: textColor,
+                    lifetime: 1000,
+                    maxLifetime: 1000,
+                    isCritical: sourceTowerType === TowerType.SNIPER || damageDealt > 50
+                  });
+                }
+
                 nextEffects.push({
                     id: Math.random().toString(), type: 'SPARK', position: { ...target.position, y: target.position.y + 0.5 },
                     color: p.color, scale: 0.5, lifetime: 10, maxLifetime: 10
@@ -392,9 +418,29 @@ const App: React.FC = () => {
                                       const phase = b.bossConfig.phases[b.currentPhase || 0];
                                       splashDmg *= (1 - phase.damageResistance);
                                       e.health -= splashDmg;
+                                      // Spawn Splash Damage Number
+                                      if (nextDamageNumbers.length < MAX_DAMAGE_NUMBERS) {
+                                        nextDamageNumbers.push({
+                                          id: Math.random().toString(),
+                                          position: { x: e.position.x + (Math.random()-0.5), y: e.position.y + 1, z: e.position.z + (Math.random()-0.5) },
+                                          value: splashDmg,
+                                          color: p.color,
+                                          lifetime: 800, maxLifetime: 800, isCritical: false
+                                        });
+                                      }
                                   }
                               } else {
                                   e.health -= splashDmg;
+                                  // Spawn Splash Damage Number
+                                  if (nextDamageNumbers.length < MAX_DAMAGE_NUMBERS) {
+                                    nextDamageNumbers.push({
+                                      id: Math.random().toString(),
+                                      position: { x: e.position.x + (Math.random()-0.5), y: e.position.y + 1, z: e.position.z + (Math.random()-0.5) },
+                                      value: splashDmg,
+                                      color: p.color,
+                                      lifetime: 800, maxLifetime: 800, isCritical: false
+                                    });
+                                  }
                               }
                           }
                        });
@@ -433,10 +479,14 @@ const App: React.FC = () => {
           }
         }
 
-        // --- STEP 5: EFFECTS CLEANUP ---
+        // --- STEP 5: EFFECTS & DAMAGE NUMBERS CLEANUP ---
         for (let i = nextEffects.length - 1; i >= 0; i--) {
             nextEffects[i].lifetime -= 1 * prev.gameSpeed;
             if (nextEffects[i].lifetime <= 0) nextEffects.splice(i, 1);
+        }
+        for (let i = nextDamageNumbers.length - 1; i >= 0; i--) {
+            nextDamageNumbers[i].lifetime -= tickDelta;
+            if (nextDamageNumbers[i].lifetime <= 0) nextDamageNumbers.splice(i, 1);
         }
 
         // --- BOSS LOGIC ---
@@ -613,7 +663,7 @@ const App: React.FC = () => {
 
         return {
           ...prev, enemies: nextEnemies, projectiles: nextProjectiles, towers: nextTowers,
-          effects: nextEffects, gold: nextGold, lives: nextLives, waveStatus: nextStatus, isGameOver: nextGameOver,
+          effects: nextEffects, damageNumbers: nextDamageNumbers, gold: nextGold, lives: nextLives, waveStatus: nextStatus, isGameOver: nextGameOver,
           gamePhase: nextPhase, stageProgress: nextStageProgress, activeBoss: currentBoss || null, bossAnnouncement: nextBossAnnouncement,
           stats: nextStats
         };
@@ -783,6 +833,7 @@ const App: React.FC = () => {
         const nextTowers = [...prev.towers];
         const nextEffects = [...prev.effects];
         const nextEnemies = prev.enemies.map(e => ({ ...e }));
+        const nextDamageNumbers = [...prev.damageNumbers];
         let nextGold = prev.gold;
         let nextStats = { ...prev.stats };
 
@@ -809,6 +860,16 @@ const App: React.FC = () => {
                     // @ts-ignore
                     if (dist <= config.range) { 
                         e.health -= config.damage; 
+
+                        // Damage Number for Eruption
+                        if (nextDamageNumbers.length < MAX_DAMAGE_NUMBERS) {
+                          nextDamageNumbers.push({
+                            id: Math.random().toString(),
+                            position: { x: e.position.x + (Math.random()-0.5), y: e.position.y + 1, z: e.position.z + (Math.random()-0.5) },
+                            value: config.damage, color: config.color, lifetime: 1200, maxLifetime: 1200, isCritical: true
+                          });
+                        }
+
                         if (e.health <= 0 && !e.isBoss) { 
                             const stats = ENEMY_STATS[e.type]; 
                             nextGold += stats.goldReward; 
@@ -827,7 +888,7 @@ const App: React.FC = () => {
         if (abilityTriggered) nextStats.abilitiesUsed++;
 
         const survivingEnemies = nextEnemies.filter(e => e.health > 0 || e.isBoss);
-        return { ...prev, towers: nextTowers, enemies: survivingEnemies, effects: nextEffects, gold: nextGold, stats: nextStats };
+        return { ...prev, towers: nextTowers, enemies: survivingEnemies, effects: nextEffects, damageNumbers: nextDamageNumbers, gold: nextGold, stats: nextStats };
     });
   };
 
@@ -838,6 +899,7 @@ const App: React.FC = () => {
           const nextTowers = [...prev.towers];
           const nextEffects = [...prev.effects];
           const nextEnemies = prev.enemies.map(e => ({ ...e }));
+          const nextDamageNumbers = [...prev.damageNumbers];
           let nextGold = prev.gold;
           let nextStats = { ...prev.stats };
           
@@ -862,6 +924,16 @@ const App: React.FC = () => {
              const dist = Math.sqrt(Math.pow(e.position.x - pos.x, 2) + Math.pow(e.position.z - pos.z, 2));
              if (dist <= radius) {
                  e.health -= totalDamage;
+
+                 // Damage Number for Orbital Strike
+                 if (nextDamageNumbers.length < MAX_DAMAGE_NUMBERS) {
+                    nextDamageNumbers.push({
+                      id: Math.random().toString(),
+                      position: { x: e.position.x + (Math.random()-0.5), y: e.position.y + 1, z: e.position.z + (Math.random()-0.5) },
+                      value: totalDamage, color: config.color, lifetime: 1500, maxLifetime: 1500, isCritical: true
+                    });
+                 }
+
                  if (e.health <= 0 && !e.isBoss) {
                      const stats = ENEMY_STATS[e.type];
                      nextGold += stats.goldReward;
@@ -871,7 +943,7 @@ const App: React.FC = () => {
           });
 
           const survivingEnemies = nextEnemies.filter(e => e.health > 0 || e.isBoss);
-          return { ...prev, towers: nextTowers, enemies: survivingEnemies, effects: nextEffects, gold: nextGold, targetingAbility: null, stats: nextStats };
+          return { ...prev, towers: nextTowers, enemies: survivingEnemies, effects: nextEffects, damageNumbers: nextDamageNumbers, gold: nextGold, targetingAbility: null, stats: nextStats };
       });
   };
 
@@ -1100,6 +1172,7 @@ const App: React.FC = () => {
       towers: [],
       projectiles: [],
       effects: [],
+      damageNumbers: [],
       gameSpeed: 1,
       isGameOver: false,
       waveStatus: 'IDLE',

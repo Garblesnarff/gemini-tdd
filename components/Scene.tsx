@@ -1,9 +1,9 @@
 
 import React, { useState, useRef, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Stars, Sky, Environment, Box, Cylinder, Sphere, Float, Sparkles, Icosahedron, Ring, Html } from '@react-three/drei';
+import { Stars, Sky, Environment, Box, Cylinder, Sphere, Float, Sparkles, Icosahedron, Ring, Html, Text, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
-import { GameState, TowerType, Vector3Tuple, EnemyType, Tower, Enemy, TechPath, Effect, PassiveType, ActiveAbilityType, Boss, StageEnvironment } from '../types';
+import { GameState, TowerType, Vector3Tuple, EnemyType, Tower, Enemy, TechPath, Effect, PassiveType, ActiveAbilityType, Boss, StageEnvironment, DamageNumber } from '../types';
 import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, TECH_PATH_INFO, ABILITY_CONFIG } from '../constants';
 
 interface SceneProps {
@@ -204,6 +204,41 @@ const FreezeEffect: React.FC<{ position: Vector3Tuple, color: string, progress: 
       </mesh>
     </group>
   );
+};
+
+// --- DAMAGE NUMBERS RENDERER ---
+
+const DamageNumbersRenderer: React.FC<{ damageNumbers: DamageNumber[] }> = ({ damageNumbers }) => {
+    return (
+        <>
+            {damageNumbers.map(dn => {
+                const progress = 1 - (dn.lifetime / dn.maxLifetime);
+                const opacity = 1 - progress;
+                const yOffset = progress * 1.5;
+
+                return (
+                    <Billboard
+                        key={dn.id}
+                        position={[dn.position.x, dn.position.y + yOffset, dn.position.z]}
+                        follow={true}
+                    >
+                        <Text
+                            fontSize={dn.isCritical ? 0.6 : 0.4}
+                            color={dn.color}
+                            anchorX="center"
+                            anchorY="middle"
+                            fillOpacity={opacity}
+                            outlineWidth={0.04}
+                            outlineColor="#000000"
+                            outlineOpacity={opacity}
+                        >
+                            {Math.floor(dn.value)}
+                        </Text>
+                    </Billboard>
+                );
+            })}
+        </>
+    );
 };
 
 // --- UNIT COMPONENTS ---
@@ -864,6 +899,7 @@ const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, s
       ))}
       
       <EffectsRenderer effects={gameState.effects} />
+      <DamageNumbersRenderer damageNumbers={gameState.damageNumbers} />
 
       {/* Targeting Reticle */}
       {gameState.targetingAbility && hoveredPos && (

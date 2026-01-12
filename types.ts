@@ -12,6 +12,16 @@ export enum EnemyType {
   BOSS = 'BOSS'
 }
 
+export interface DamageNumber {
+  id: string;
+  position: Vector3Tuple;
+  value: number;
+  color: string;
+  lifetime: number; 
+  maxLifetime: number;
+  isCritical: boolean;
+}
+
 export interface Enemy {
   id: string;
   type: EnemyType;
@@ -261,6 +271,7 @@ export interface GameState {
   towers: Tower[];
   projectiles: Projectile[];
   effects: Effect[];
+  damageNumbers: DamageNumber[];
   gameSpeed: number; 
   isGameOver: boolean;
   waveStatus: 'IDLE' | 'SPAWNING' | 'CLEARING';
@@ -269,7 +280,7 @@ export interface GameState {
   activeAugments: Augment[];
   augmentChoices: Augment[];
   isChoosingAugment: boolean;
-  targetingAbility: ActiveAbilityType | null;
+  targetingAbility: null | ActiveAbilityType;
 
   // New Fields
   currentStage: StageId;
