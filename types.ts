@@ -121,12 +121,13 @@ export interface Projectile {
 
 export interface Effect {
   id: string;
-  type: 'EXPLOSION' | 'SPARK' | 'TEXT' | 'NOVA' | 'FREEZE_WAVE' | 'ORBITAL_STRIKE';
+  type: 'EXPLOSION' | 'SPARK' | 'TEXT' | 'NOVA' | 'FREEZE_WAVE' | 'ORBITAL_STRIKE' | 'PORTAL' | 'BLOCKED';
   position: Vector3Tuple;
   color: string;
   scale: number;
   lifetime: number; 
   maxLifetime: number; 
+  text?: string;
 }
 
 // --- NEW STAGE & BOSS TYPES ---
@@ -222,6 +223,8 @@ export interface Boss extends Enemy {
   currentPhase: number;
   abilityCooldowns: Record<string, number>;
   isShielded: boolean;
+  shieldTimer?: number;
+  triggeredSpawnIndices: number[];
   disabledZone?: { position: Vector3Tuple; radius: number; duration: number };
 }
 

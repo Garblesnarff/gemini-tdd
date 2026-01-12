@@ -1,6 +1,6 @@
 
 import React, { useMemo } from 'react';
-import { GameState, TowerType, TechPath, ActiveAbilityType, TargetPriority, Vector3Tuple, Augment, StageId } from '../types';
+import { GameState, TowerType, TechPath, ActiveAbilityType, TargetPriority, Vector3Tuple, Augment, StageId, BossAbilityType } from '../types';
 import { TOWER_STATS, TECH_PATH_INFO, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, STAGE_CONFIGS } from '../constants';
 import { Heart, Coins, Swords, Shield, Zap, Info, ChevronRight, RefreshCcw, Radio, Eye, X, ArrowUpCircle, Check, Play, Pause, FastForward, Trash2, Crosshair, Target, Cpu, Flame, Snowflake, Ghost, Bomb, Lock, Star, Map, Skull } from 'lucide-react';
 
@@ -154,11 +154,13 @@ const BossHealthBar: React.FC<{ gameState: GameState }> = ({ gameState }) => {
     const config = boss.bossConfig;
     const phase = boss.currentPhase || 0;
     
-    // Markers for phases: 75, 50, 25
-    const markers = [75, 50, 25];
+    // Markers based on config thresholds (skip 1.0/100%)
+    const markers = config.phases
+        .filter(p => p.healthThreshold < 1.0)
+        .map(p => p.healthThreshold * 100);
 
     return (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 w-full max-w-2xl flex flex-col items-center pointer-events-none animate-in slide-in-from-top-4 duration-500">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 w-full max-w-2xl flex flex-col items-center pointer-events-none animate-in slide-in-from-top-4 duration-500 z-50">
              <div className="flex flex-col items-center mb-2">
                  <div className="flex items-center gap-2">
                      <Skull className="text-red-500 animate-pulse" />
@@ -180,7 +182,9 @@ const BossHealthBar: React.FC<{ gameState: GameState }> = ({ gameState }) => {
                  
                  {/* Phase Markers */}
                  {markers.map(m => (
-                     <div key={m} className="absolute top-0 bottom-0 w-0.5 bg-black/50 z-10" style={{ left: `${m}%` }} />
+                     <div key={m} className="absolute top-0 bottom-0 w-0.5 bg-black/70 z-10 flex flex-col justify-end pb-1 items-center" style={{ left: `${m}%` }}>
+                        <div className="w-2 h-2 rounded-full bg-red-900 border border-black/50" />
+                     </div>
                  ))}
 
                  {/* Text Overlay */}
@@ -189,14 +193,55 @@ const BossHealthBar: React.FC<{ gameState: GameState }> = ({ gameState }) => {
                  </div>
              </div>
 
-             {/* Phase Indicator */}
-             <div className="flex items-center gap-1 mt-1">
-                 {config.phases.map((p, i) => (
-                     <div 
-                        key={i} 
-                        className={`h-1.5 w-8 rounded-full transition-colors ${i <= phase ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]' : 'bg-slate-800'}`}
-                     />
-                 ))}
+             {/* Boss Abilities & Phase */}
+             <div className="flex items-center justify-between w-full px-2 mt-2">
+                 {/* Phase Indicator */}
+                <div className="flex items-center gap-2">
+                    {config.phases.map((p, i) => (
+                        <div 
+                            key={i} 
+                            className={`
+                                h-1.5 w-6 rounded-full transition-all duration-300
+                                ${i <= phase 
+                                    ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]' 
+                                    : 'bg-slate-800'}
+                            `}
+                        />
+                    ))}
+                    <span className="text-[10px] font-bold text-red-400 ml-1 uppercase">PHASE {phase + 1}</span>
+                </div>
+
+                {/* Ability Icons */}
+                <div className="flex gap-2">
+                    {config.abilities.map(ability => {
+                        const cooldown = boss.abilityCooldowns[ability.id] || 0;
+                        const isReady = cooldown <= 0;
+                        
+                        // Check if unlocked logic from App.tsx repeated or simplified here
+                        // Simple check: if abilityUnlock is set in a future phase, show as locked
+                        // We will simplify visually: if ready, bright. If cd, dim.
+                        
+                        let Icon = Zap;
+                        if (ability.type === BossAbilityType.SHIELD_PULSE) Icon = Shield;
+                        if (ability.type === BossAbilityType.SPAWN_MINIONS) Icon = Ghost;
+
+                        return (
+                            <div key={ability.id} className="relative group">
+                                <div className={`
+                                    w-6 h-6 rounded flex items-center justify-center border transition-colors
+                                    ${isReady ? 'bg-red-900/80 border-red-500 text-red-400 shadow-[0_0_10px_rgba(220,38,38,0.5)]' : 'bg-slate-900 border-slate-700 text-slate-600'}
+                                `}>
+                                    <Icon size={14} />
+                                </div>
+                                {cooldown > 0 && (
+                                    <div className="absolute inset-0 bg-black/50 rounded flex items-center justify-center text-[8px] text-white font-mono">
+                                        {(cooldown / 1000).toFixed(0)}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
              </div>
         </div>
     );
@@ -589,11 +634,27 @@ const HUD: React.FC<HUDProps> = ({
 
             {/* Bottom Right: Action Button */}
             <div className="absolute bottom-4 right-4 md:bottom-6 md:right-6 pointer-events-auto">
-                {gameState.waveStatus === 'IDLE' && !gameState.isGameOver && !selectedTower && !pendingPlacement && !gameState.isChoosingAugment && !gameState.targetingAbility && (
-                <button onClick={onStartWave} className="group bg-blue-600 hover:bg-blue-500 text-white pl-6 pr-5 py-4 rounded-xl font-bold text-lg shadow-[0_0_30px_rgba(37,99,235,0.4)] flex items-center gap-3 transition-all transform hover:scale-105">
-                    <span>NEXT WAVE</span><div className="bg-blue-700 rounded-lg p-1 group-hover:translate-x-1 transition-transform"><ChevronRight size={20} /></div>
+                <button 
+                    onClick={onStartWave}
+                    disabled={gameState.waveStatus !== 'IDLE' || gameState.isChoosingAugment}
+                    className={`
+                        group relative flex items-center justify-center w-20 h-20 rounded-full border-4 shadow-[0_0_30px_rgba(0,0,0,0.5)] transition-all duration-300
+                        ${gameState.waveStatus === 'IDLE' && !gameState.isChoosingAugment
+                            ? 'bg-blue-600 border-blue-400 hover:scale-110 hover:bg-blue-500 cursor-pointer animate-[pulse_2s_infinite]' 
+                            : 'bg-slate-800 border-slate-700 grayscale cursor-not-allowed opacity-80'}
+                    `}
+                >
+                    <div className="absolute inset-0 rounded-full border-2 border-white/20 scale-90 group-hover:scale-100 transition-transform" />
+                    {gameState.waveStatus === 'IDLE' && !gameState.isChoosingAugment ? (
+                         <Play size={32} fill="currentColor" className="text-white ml-1" /> 
+                    ) : (
+                         <div className="flex gap-1">
+                             <div className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce" />
+                             <div className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce delay-100" />
+                             <div className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce delay-200" />
+                         </div>
+                    )}
                 </button>
-                )}
             </div>
         </>
       )}

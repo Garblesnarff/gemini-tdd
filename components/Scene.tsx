@@ -18,7 +18,6 @@ interface SceneProps {
 // --- VISUAL ASSETS ---
 
 const NukeEffect: React.FC<{ position: Vector3Tuple, color: string, progress: number }> = ({ position, color, progress }) => {
-  // Simple splash for legacy/other effects, though currently Nuke uses OrbitalStrike
   const scale = 1 + progress * 8; 
   const opacity = 1 - Math.pow(progress, 3); 
 
@@ -37,27 +36,59 @@ const NukeEffect: React.FC<{ position: Vector3Tuple, color: string, progress: nu
   );
 };
 
+const PortalEffect: React.FC<{ position: Vector3Tuple, color: string, progress: number }> = ({ position, color, progress }) => {
+    // Spawns, holds, then shrinks
+    // progress 0 -> 1
+    // Scale: 0 -> 1 (0.2s), 1 (hold), 1 -> 0 (end)
+    let scale = 0;
+    if (progress < 0.2) scale = progress * 5;
+    else if (progress > 0.8) scale = (1 - progress) * 5;
+    else scale = 1;
+
+    const groupRef = useRef<THREE.Group>(null);
+    useFrame((state) => {
+        if (groupRef.current) {
+            groupRef.current.rotation.y += 0.1;
+        }
+    });
+
+    return (
+        <group position={[position.x, 0.1, position.z]}>
+            <group ref={groupRef} scale={[scale, scale, scale]}>
+                 <mesh rotation={[-Math.PI / 2, 0, 0]}>
+                    <ringGeometry args={[1.5, 1.8, 32]} />
+                    <meshBasicMaterial color={color} side={THREE.DoubleSide} transparent opacity={0.8} />
+                 </mesh>
+                 <mesh rotation={[-Math.PI / 2, 0, 0]}>
+                    <circleGeometry args={[1.4, 32]} />
+                    <meshBasicMaterial color="#000" transparent opacity={0.9} />
+                 </mesh>
+                 {/* Swirl */}
+                 <Sparkles count={40} scale={2} size={6} speed={2} color={color} />
+            </group>
+            {/* Vertical Beam */}
+            <mesh position={[0, 2, 0]} scale={[scale, 1, scale]}>
+                <cylinderGeometry args={[1.5, 1.5, 4, 32, 1, true]} />
+                <meshBasicMaterial color={color} transparent opacity={0.2} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
+            </mesh>
+        </group>
+    );
+};
+
 const OrbitalStrikeEffect: React.FC<{ position: Vector3Tuple, color: string, progress: number }> = ({ position, color, progress }) => {
-    // 0 -> 0.2: Missile Falling
-    // 0.2 -> 1.0: Explosion
     const isFalling = progress < 0.2;
     const explodeProgress = isFalling ? 0 : (progress - 0.2) / 0.8;
-    
-    // Missile Start Y = 20, End Y = 0
-    // falling progress 0->1 based on global progress 0->0.2
     const fallRatio = progress * 5; 
     const missileY = 20 - (fallRatio * 20);
 
     return (
         <group position={[position.x, 0, position.z]}>
-            {/* Falling Missile */}
             {isFalling && (
                 <group position={[0, missileY, 0]}>
                     <mesh rotation={[0, 0, 0]}>
                         <cylinderGeometry args={[0.2, 0.1, 2]} />
                         <meshBasicMaterial color="#fff" />
                     </mesh>
-                    {/* Trail */}
                     <mesh position={[0, 2, 0]}>
                          <cylinderGeometry args={[0.05, 0.2, 4, 8, 1, true]} />
                          <meshBasicMaterial color={color} transparent opacity={0.5} side={THREE.DoubleSide} />
@@ -65,22 +96,16 @@ const OrbitalStrikeEffect: React.FC<{ position: Vector3Tuple, color: string, pro
                 </group>
             )}
 
-            {/* Impact Explosion */}
             {!isFalling && (
                 <group>
-                    {/* Ground Ring Expanding */}
                     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
                         <ringGeometry args={[explodeProgress * 3.5, explodeProgress * 4, 64]} />
                         <meshBasicMaterial color={color} transparent opacity={1 - explodeProgress} />
                     </mesh>
-                    
-                    {/* Central Column */}
                     <mesh position={[0, explodeProgress * 2, 0]}>
                         <cylinderGeometry args={[2 * (1-explodeProgress), 0.5, 4]} />
                         <meshBasicMaterial color={color} transparent opacity={(1-explodeProgress) * 0.8} />
                     </mesh>
-
-                    {/* Debris */}
                     <Sparkles count={100} scale={5 + explodeProgress * 5} size={10} speed={1} opacity={1 - explodeProgress} color="#fff" />
                 </group>
             )}
@@ -114,19 +139,21 @@ const BossUnit: React.FC<{ boss: Boss }> = ({ boss }) => {
     const groupRef = useRef<THREE.Group>(null);
     const coreRef = useRef<THREE.Mesh>(null);
     const ringRef = useRef<THREE.Mesh>(null);
+    const shieldRef = useRef<THREE.Mesh>(null);
     
     const phase = boss.currentPhase || 0;
     const config = boss.bossConfig;
     const size = config.size;
     
-    // Phase 1 (75%) -> Enraged (Red glow, faster spin)
-    // Phase 2 (50%) -> Shielded (Blue bubble)
-    // Phase 3 (25%) -> Unstable (Glitching)
-    const isEnraged = phase >= 1;
-    const isShielded = phase === 2;
-    const isUnstable = phase >= 3;
+    // Derived from active phase config
+    const activePhaseConfig = config.phases[phase];
+    const visualState = activePhaseConfig?.visualChange || 'unstable';
+
+    const isEnraged = visualState === 'enraged';
+    const isPhaseShielded = visualState === 'shielded';
+    const isUnstable = visualState === 'unstable';
     
-    const color = isEnraged ? '#ef4444' : config.color;
+    const color = isEnraged ? '#ff0000' : isPhaseShielded ? '#3b82f6' : config.color;
 
     useFrame((state, delta) => {
         if (!groupRef.current) return;
@@ -135,7 +162,7 @@ const BossUnit: React.FC<{ boss: Boss }> = ({ boss }) => {
         groupRef.current.position.y = 1.5 + Math.sin(state.clock.elapsedTime * 2) * 0.2;
         
         // Rotation based on phase
-        const speed = isEnraged ? 2 : 0.5;
+        const speed = isEnraged ? 4 : 1;
         if (ringRef.current) {
             ringRef.current.rotation.z += delta * speed;
             ringRef.current.rotation.x += delta * speed * 0.5;
@@ -143,14 +170,30 @@ const BossUnit: React.FC<{ boss: Boss }> = ({ boss }) => {
 
         // Pulse core
         if (coreRef.current) {
-             const scale = 1 + Math.sin(state.clock.elapsedTime * (isEnraged ? 10 : 3)) * 0.1;
+             const scale = 1 + Math.sin(state.clock.elapsedTime * (isEnraged ? 15 : 3)) * (isEnraged ? 0.2 : 0.1);
              coreRef.current.scale.setScalar(scale);
+             
+             if (isUnstable) {
+                 coreRef.current.material.opacity = 0.5 + Math.random() * 0.5;
+                 coreRef.current.material.transparent = true;
+             } else {
+                 coreRef.current.material.opacity = 1;
+                 coreRef.current.material.transparent = false;
+             }
         }
         
         // Unstable jitter
         if (isUnstable) {
-             groupRef.current.position.x += (Math.random() - 0.5) * 0.1;
-             groupRef.current.position.z += (Math.random() - 0.5) * 0.1;
+             groupRef.current.position.x += (Math.random() - 0.5) * 0.15;
+             groupRef.current.position.z += (Math.random() - 0.5) * 0.15;
+        }
+
+        // Active Ability Shield Animation
+        if (boss.isShielded && shieldRef.current) {
+            shieldRef.current.rotation.y += delta * 2;
+            shieldRef.current.rotation.z += delta;
+            const s = 1.3 + Math.sin(state.clock.elapsedTime * 10) * 0.05;
+            shieldRef.current.scale.setScalar(s);
         }
     });
 
@@ -160,7 +203,7 @@ const BossUnit: React.FC<{ boss: Boss }> = ({ boss }) => {
                 {/* Core Body */}
                 <mesh ref={coreRef} castShadow receiveShadow>
                      <boxGeometry args={[size * 0.6, size * 0.6, size * 0.6]} />
-                     <meshStandardMaterial color={color} emissive={color} emissiveIntensity={isEnraged ? 2 : 0.5} />
+                     <meshStandardMaterial color={color} emissive={color} emissiveIntensity={isEnraged ? 3 : 0.5} />
                 </mesh>
                 
                 {/* Armor Plates */}
@@ -181,12 +224,49 @@ const BossUnit: React.FC<{ boss: Boss }> = ({ boss }) => {
                     <meshStandardMaterial color="#fff" emissive="#fff" emissiveIntensity={0.8} />
                 </mesh>
 
-                {/* Shield Bubble */}
-                {isShielded && (
+                {/* Phase Shield Bubble (Passive) */}
+                {isPhaseShielded && (
                     <mesh>
-                        <sphereGeometry args={[size, 32, 32]} />
-                        <meshPhysicalMaterial color="#3b82f6" transparent opacity={0.3} transmission={0.5} roughness={0} />
+                        <sphereGeometry args={[size * 1.2, 32, 32]} />
+                        <meshPhysicalMaterial 
+                            color="#3b82f6" 
+                            transparent 
+                            opacity={0.2} 
+                            transmission={0.4} 
+                            roughness={0} 
+                            thickness={0.5}
+                        />
                     </mesh>
+                )}
+
+                {/* Ability Shield Bubble (Active - Invulnerable) */}
+                {boss.isShielded && (
+                    <mesh ref={shieldRef}>
+                        <icosahedronGeometry args={[size * 1.3, 2]} />
+                        <meshBasicMaterial color="#60a5fa" wireframe transparent opacity={0.6} />
+                    </mesh>
+                )}
+                {boss.isShielded && (
+                     <mesh>
+                        <sphereGeometry args={[size * 1.25, 32, 32]} />
+                        <meshPhysicalMaterial 
+                            color="#93c5fd" 
+                            transparent 
+                            opacity={0.4} 
+                            emissive="#3b82f6"
+                            emissiveIntensity={0.5}
+                            side={THREE.DoubleSide}
+                        />
+                    </mesh>
+                )}
+                
+                {/* Particle Effects */}
+                {isEnraged && (
+                    <Sparkles count={50} scale={size * 2} size={5} speed={2} opacity={1} color="#ef4444" />
+                )}
+                
+                {isUnstable && (
+                    <Sparkles count={30} scale={size * 2} size={3} speed={5} opacity={0.5} color="#fbbf24" noise={1} />
                 )}
             </group>
             
@@ -195,8 +275,6 @@ const BossUnit: React.FC<{ boss: Boss }> = ({ boss }) => {
                 <circleGeometry args={[size, 32]} />
                 <meshBasicMaterial color="#000" transparent opacity={0.5} />
             </mesh>
-            
-            {/* Boss overhead UI can go here if we wanted 3D UI, but using HUD for main bar */}
         </group>
     );
 };
@@ -460,6 +538,27 @@ const EffectsRenderer: React.FC<{ effects: Effect[] }> = ({ effects }) => {
 
                 if (effect.type === 'FREEZE_WAVE') {
                      return <FreezeEffect key={effect.id} position={effect.position} color={effect.color} progress={progress} />;
+                }
+
+                if (effect.type === 'PORTAL') {
+                     return <PortalEffect key={effect.id} position={effect.position} color={effect.color} progress={progress} />;
+                }
+                
+                if (effect.type === 'BLOCKED') {
+                    // Floating text for blocked damage
+                    return (
+                        <Html key={effect.id} position={[effect.position.x, effect.position.y + progress * 2, effect.position.z]}>
+                            <div style={{ 
+                                color: '#3b82f6', 
+                                fontWeight: 'bold', 
+                                fontSize: '12px', 
+                                textShadow: '0 0 5px #000',
+                                opacity: 1 - progress
+                            }}>
+                                {effect.text}
+                            </div>
+                        </Html>
+                    );
                 }
 
                 const opacity = 1 - progress;

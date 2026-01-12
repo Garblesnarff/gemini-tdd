@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars, Sky, Environment, Float, Text } from '@react-three/drei';
 import * as THREE from 'three';
-import { GameState, Enemy, Tower, Projectile, Effect, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType, StageId, Boss } from './types';
+import { GameState, Enemy, Tower, Projectile, Effect, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType, StageId, Boss, BossAbilityType } from './types';
 import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL, STAGE_CONFIGS, getWaveDefinition } from './constants';
 import HUD from './components/HUD';
 import Scene from './components/Scene';
@@ -148,6 +148,12 @@ const App: React.FC = () => {
           if (enemy.isBoss && enemy.bossConfig) {
              const phase = enemy.bossConfig.phases[enemy.currentPhase || 0];
              speedMultiplier *= phase.speedMultiplier;
+             
+             // Check if actively shielding (ability)
+             if ((enemy as Boss).isShielded) {
+                 // Might reduce speed while shielding
+                 speedMultiplier *= 0.5;
+             }
           }
 
           if (enemy.freezeTimer && enemy.freezeTimer > 0) {
@@ -234,40 +240,65 @@ const App: React.FC = () => {
           const hitRadius = target.isBoss ? 1 : 0.2;
 
           if (dist < moveDist || dist < hitRadius) {
-            // Damage Calculation with Boss Resistance
-            let finalDamage = p.damage;
-            if (target.isBoss && target.bossConfig) {
-                 const phase = target.bossConfig.phases[target.currentPhase || 0];
-                 finalDamage *= (1 - phase.damageResistance);
+            
+            // DAMAGE LOGIC WITH SHIELD CHECK
+            let damageDealt = 0;
+            let isImmune = false;
+
+            if (target.isBoss) {
+                const boss = target as Boss;
+                if (boss.isShielded) {
+                    isImmune = true;
+                    // Shield Hit Effect
+                    nextEffects.push({
+                        id: Math.random().toString(), type: 'BLOCKED', position: { ...target.position, y: target.position.y + 1 },
+                        color: '#3b82f6', scale: 1, lifetime: 20, maxLifetime: 20, text: "BLOCKED"
+                    });
+                } else {
+                    let finalDamage = p.damage;
+                    const phase = boss.bossConfig.phases[boss.currentPhase || 0];
+                    finalDamage *= (1 - phase.damageResistance);
+                    damageDealt = finalDamage;
+                }
+            } else {
+                damageDealt = p.damage;
             }
 
-            target.health -= finalDamage;
-            nextProjectiles.splice(i, 1);
-            nextEffects.push({
-                id: Math.random().toString(), type: 'SPARK', position: { ...target.position, y: target.position.y + 0.5 },
-                color: p.color, scale: 0.5, lifetime: 10, maxLifetime: 10
-            });
-            
-            prev.activeAugments.forEach(aug => {
-              if (aug.type === AugmentType.ON_HIT && aug.effect.special === 'SPLASH_DAMAGE' && aug.effect.target === p.sourceType) {
-                 nextEffects.push({
-                    id: Math.random().toString(), type: 'EXPLOSION', position: target.position,
-                    color: p.color, scale: 1.5, lifetime: 15, maxLifetime: 15
-                 });
-                 nextEnemies.forEach(e => {
-                    if (e.id === target.id) return;
-                    const splashDist = Math.sqrt(Math.pow(e.position.x - target.position.x, 2) + Math.pow(e.position.z - target.position.z, 2));
-                    if (splashDist < 2) {
-                        let splashDmg = p.damage * aug.effect.value;
-                        if (e.isBoss && e.bossConfig) {
-                             const phase = e.bossConfig.phases[e.currentPhase || 0];
-                             splashDmg *= (1 - phase.damageResistance);
-                        }
-                        e.health -= splashDmg;
+            if (!isImmune) {
+                target.health -= damageDealt;
+                nextEffects.push({
+                    id: Math.random().toString(), type: 'SPARK', position: { ...target.position, y: target.position.y + 0.5 },
+                    color: p.color, scale: 0.5, lifetime: 10, maxLifetime: 10
+                });
+
+                // Splash Damage Augment
+                prev.activeAugments.forEach(aug => {
+                    if (aug.type === AugmentType.ON_HIT && aug.effect.special === 'SPLASH_DAMAGE' && aug.effect.target === p.sourceType) {
+                       nextEffects.push({
+                          id: Math.random().toString(), type: 'EXPLOSION', position: target.position,
+                          color: p.color, scale: 1.5, lifetime: 15, maxLifetime: 15
+                       });
+                       nextEnemies.forEach(e => {
+                          if (e.id === target.id) return;
+                          const splashDist = Math.sqrt(Math.pow(e.position.x - target.position.x, 2) + Math.pow(e.position.z - target.position.z, 2));
+                          if (splashDist < 2) {
+                              let splashDmg = p.damage * aug.effect.value;
+                              if (e.isBoss) {
+                                  const b = e as Boss;
+                                  if (b.isShielded) splashDmg = 0;
+                                  else {
+                                      const phase = b.bossConfig.phases[b.currentPhase || 0];
+                                      splashDmg *= (1 - phase.damageResistance);
+                                  }
+                              }
+                              e.health -= splashDmg;
+                          }
+                       });
                     }
-                 });
-              }
-            });
+                  });
+            }
+
+            nextProjectiles.splice(i, 1);
 
             if (target.health <= 0) {
               const enemyIdx = nextEnemies.indexOf(target);
@@ -294,24 +325,143 @@ const App: React.FC = () => {
             if (nextEffects[i].lifetime <= 0) nextEffects.splice(i, 1);
         }
 
-        // --- BOSS PHASE LOGIC ---
-        const currentBoss = nextEnemies.find(e => e.isBoss) as Boss | undefined;
-        if (currentBoss) {
-            const healthPct = currentBoss.health / currentBoss.maxHealth;
-            const config = currentBoss.bossConfig;
-            let phaseIdx = 0;
-            // Find lowest threshold reached. Assumes phases in config are sorted (1.0 down to 0.0) or we scan all.
+        // --- BOSS LOGIC (PHASES & ABILITIES) ---
+        const bossIndex = nextEnemies.findIndex(e => e.isBoss);
+        let currentBoss = bossIndex > -1 ? (nextEnemies[bossIndex] as Boss) : null;
+        
+        if (currentBoss && currentBoss.health > 0) {
+            // Update Boss Reference (since we are modifying properties on the object in array)
+            // Note: Mutating object properties inside setGameState is usually unsafe if not copied, 
+            // but we copied nextEnemies via spread, and objects are refs. We should clone the boss object to be safe.
+            const updatedBoss = { ...currentBoss };
+            updatedBoss.abilityCooldowns = { ...currentBoss.abilityCooldowns }; // shallow copy cooldowns
+            
+            const healthPct = updatedBoss.health / updatedBoss.maxHealth;
+            const config = updatedBoss.bossConfig;
+            
+            // 1. PHASE TRANSITION LOGIC
+            let newPhaseIdx = updatedBoss.currentPhase || 0;
             for (let i = 0; i < config.phases.length; i++) {
                 if (healthPct <= config.phases[i].healthThreshold) {
-                    phaseIdx = i;
+                    newPhaseIdx = i;
+                }
+            }
+            if (newPhaseIdx !== (updatedBoss.currentPhase || 0)) {
+                updatedBoss.currentPhase = newPhaseIdx;
+                nextBossAnnouncement = config.phases[newPhaseIdx].announcement;
+                nextEffects.push({
+                    id: Math.random().toString(), type: 'NOVA', position: updatedBoss.position,
+                    color: config.phases[newPhaseIdx].visualChange === 'enraged' ? '#ef4444' : '#3b82f6',
+                    scale: 3, lifetime: 40, maxLifetime: 40
+                });
+            }
+
+            // 2. ONE-TIME THRESHOLD SPAWNS
+            config.minionSpawns.forEach((spawn, idx) => {
+                if (!updatedBoss.triggeredSpawnIndices.includes(idx) && healthPct <= spawn.triggerHealth) {
+                    updatedBoss.triggeredSpawnIndices = [...updatedBoss.triggeredSpawnIndices, idx];
+                    nextBossAnnouncement = spawn.announcement || "REINFORCEMENTS INCOMING";
+                    
+                    // Spawn logic
+                    nextEffects.push({
+                        id: Math.random().toString(), type: 'PORTAL', position: updatedBoss.position,
+                        color: '#f97316', scale: 2, lifetime: 60, maxLifetime: 60
+                    });
+
+                    for (let k = 0; k < spawn.count; k++) {
+                         const stats = ENEMY_STATS[spawn.enemyType];
+                         // Random offset
+                         const offsetX = (Math.random() - 0.5) * 1;
+                         const offsetZ = (Math.random() - 0.5) * 1;
+                         const spawnPos = { x: updatedBoss.position.x + offsetX, y: updatedBoss.position.y, z: updatedBoss.position.z + offsetZ };
+                         
+                         nextEnemies.push({
+                            id: Math.random().toString(), type: spawn.enemyType,
+                            health: stats.health * 1.2, maxHealth: stats.health * 1.2,
+                            speed: stats.speed, position: spawnPos,
+                            pathIndex: updatedBoss.pathIndex, progress: updatedBoss.progress
+                         });
+                    }
+                }
+            });
+
+            // 3. ABILITY MANAGEMENT
+            // Decrement Cooldowns
+            Object.keys(updatedBoss.abilityCooldowns).forEach(key => {
+                if (updatedBoss.abilityCooldowns[key] > 0) {
+                    updatedBoss.abilityCooldowns[key] -= tickDelta;
+                }
+            });
+
+            // Handle Active Shield Expiration
+            if (updatedBoss.isShielded) {
+                if ((updatedBoss.shieldTimer || 0) > 0) {
+                    updatedBoss.shieldTimer = (updatedBoss.shieldTimer || 0) - tickDelta;
+                } else {
+                    updatedBoss.isShielded = false;
+                    nextEffects.push({
+                         id: Math.random().toString(), type: 'NOVA', position: updatedBoss.position,
+                         color: '#3b82f6', scale: 2, lifetime: 20, maxLifetime: 20
+                    });
                 }
             }
 
-            if (phaseIdx > (currentBoss.currentPhase || 0)) {
-                currentBoss.currentPhase = phaseIdx;
-                nextBossAnnouncement = config.phases[phaseIdx].announcement;
-            }
+            // Check & Execute Abilities
+            config.abilities.forEach(ability => {
+                 // Check if unlocked in current phase
+                 // Logic: Look at all phases <= currentPhase. If abilityUnlock matches this ability ID, it's unlocked.
+                 // OR simpler: If ability ID is NOT mentioned in any higher phase unlocks, assume available?
+                 // Let's implement robust check: 
+                 // Iterate phases up to current. Collect unlocked IDs.
+                 let unlocked = true; // Default to true if not restricted
+                 
+                 // If any phase explicitly unlocks it, assume it starts locked until that phase
+                 const isRestricted = config.phases.some(p => p.abilityUnlock === ability.id);
+                 if (isRestricted) {
+                     unlocked = false;
+                     for (let p = 0; p <= (updatedBoss.currentPhase || 0); p++) {
+                         if (config.phases[p].abilityUnlock === ability.id) unlocked = true;
+                     }
+                 }
+
+                 if (unlocked && (updatedBoss.abilityCooldowns[ability.id] || 0) <= 0 && !updatedBoss.isShielded) {
+                     // TRIGGER ABILITY
+                     updatedBoss.abilityCooldowns[ability.id] = ability.cooldown;
+                     
+                     if (ability.type === BossAbilityType.SPAWN_MINIONS) {
+                         nextBossAnnouncement = "DEPLOYING DEFENSE DRONES";
+                         nextEffects.push({
+                            id: Math.random().toString(), type: 'PORTAL', position: updatedBoss.position,
+                            color: '#fbbf24', scale: 2, lifetime: 50, maxLifetime: 50
+                        });
+                        // Spawns occur slightly staggered or immediate
+                        // We'll spawn immediately for simplicity
+                        const count = 3 + Math.floor(updatedBoss.currentPhase * 2); // Scale with phase
+                        for (let k = 0; k < count; k++) {
+                            const stats = ENEMY_STATS[EnemyType.BASIC];
+                            const offsetX = (Math.random() - 0.5) * 2;
+                            const offsetZ = (Math.random() - 0.5) * 2;
+                            nextEnemies.push({
+                               id: Math.random().toString(), type: EnemyType.BASIC,
+                               health: stats.health, maxHealth: stats.health,
+                               speed: stats.speed, position: { x: updatedBoss.position.x + offsetX, y: updatedBoss.position.y, z: updatedBoss.position.z + offsetZ },
+                               pathIndex: updatedBoss.pathIndex, progress: updatedBoss.progress
+                            });
+                       }
+                     } else if (ability.type === BossAbilityType.SHIELD_PULSE) {
+                         updatedBoss.isShielded = true;
+                         updatedBoss.shieldTimer = ability.duration || 3000;
+                         nextBossAnnouncement = "EMERGENCY SHIELDS ACTIVE";
+                         // Visual handled by BossUnit state
+                     }
+                 }
+            });
+
+            // Re-assign updated boss to enemies array
+            nextEnemies[bossIndex] = updatedBoss;
+            currentBoss = updatedBoss; // update local ref for GameState return
         }
+
 
         // --- STEP 6: WAVE COMPLETE (Economy Augments) & STAGE VICTORY CHECK ---
         if (nextStatus === 'CLEARING' && nextEnemies.length === 0) {
@@ -470,7 +620,9 @@ const App: React.FC = () => {
           bossConfig: config,
           currentPhase: 0,
           abilityCooldowns: {},
-          isShielded: false
+          isShielded: false,
+          shieldTimer: 0,
+          triggeredSpawnIndices: []
       };
 
       setGameState(prev => ({
