@@ -3,8 +3,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars, Sky, Environment, Float, Text } from '@react-three/drei';
 import * as THREE from 'three';
-import { GameState, Enemy, Tower, Projectile, Effect, DamageNumber, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType, StageId, Boss, BossAbilityType } from './types';
-import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL, STAGE_CONFIGS, getWaveDefinition, INITIAL_STAGE_PROGRESS, TECH_PATH_INFO } from './constants';
+import { GameState, Enemy, Tower, Projectile, Effect, DamageNumber, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType, StageId, Boss, BossAbilityType, DirectorActionType } from './types';
+import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL, STAGE_CONFIGS, getWaveDefinition, INITIAL_STAGE_PROGRESS, TECH_PATH_INFO, TACTICAL_INTEL_POOL } from './constants';
 import HUD from './components/HUD';
 import Scene from './components/Scene';
 import { saveGame, loadGame, clearSave, hasSaveData } from './saveSystem';
@@ -43,7 +43,11 @@ const App: React.FC = () => {
         towersBuilt: 0,
         abilitiesUsed: 0
     },
-    bossDeathTimer: 0
+    bossDeathTimer: 0,
+    directorAction: 'NONE',
+    directorScaling: 1,
+    directorGoldBonus: 1,
+    directorCooldownMult: 1
   });
 
   const [selectedTowerType, setSelectedTowerType] = useState<TowerType>(TowerType.BASIC);
@@ -201,7 +205,9 @@ const App: React.FC = () => {
 
         // Apply Active Self-Buffs (Overclock)
         nextTowers.forEach(t => {
-            if (t.abilityCooldown > 0) t.abilityCooldown = Math.max(0, t.abilityCooldown - tickDelta);
+            // APPLY DIRECTOR COOLDOWN MULT
+            const cdTick = tickDelta * (1 / (prev.directorCooldownMult || 1));
+            if (t.abilityCooldown > 0) t.abilityCooldown = Math.max(0, t.abilityCooldown - cdTick);
             if (t.abilityDuration > 0) t.abilityDuration = Math.max(0, t.abilityDuration - tickDelta);
             if (t.abilityDuration > 0 && t.activeType === ActiveAbilityType.OVERCLOCK && (t.disabledTimer || 0) <= 0) {
                 const config = ABILITY_CONFIG[ActiveAbilityType.OVERCLOCK];
@@ -302,7 +308,11 @@ const App: React.FC = () => {
         // --- STEP 3: TOWER SHOOTING ---
         const now = Date.now();
         nextTowers.forEach(tower => {
-          tower.cooldown -= tickDelta;
+          // DIRECTOR COOLDOWN MULT applied to shooting rate logic too? 
+          // Re-calculated: if cooldown is 1000ms. tickDelta is 50ms.
+          // tower.cooldown -= tickDelta * (1 / directorCooldownMult)
+          const cdTick = tickDelta * (1 / (prev.directorCooldownMult || 1));
+          tower.cooldown -= cdTick;
           
           // Check for Disable Status
           if (tower.disabledTimer && tower.disabledTimer > 0) return;
@@ -462,8 +472,9 @@ const App: React.FC = () => {
                   const enemyIdx = nextEnemies.indexOf(target);
                   if (enemyIdx > -1) {
                     const stats = ENEMY_STATS[target.type];
-                    nextGold += stats.goldReward;
-                    nextStats.totalGoldEarned += stats.goldReward; // Stats Tracking
+                    const reward = Math.floor(stats.goldReward * prev.directorGoldBonus);
+                    nextGold += reward;
+                    nextStats.totalGoldEarned += reward; // Stats Tracking
                     nextEnemies.splice(enemyIdx, 1);
                     nextEffects.push({
                         id: Math.random().toString(), type: 'EXPLOSION', position: { ...target.position, y: 0.5 },
@@ -672,6 +683,42 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [gameState.isGameOver, gameState.gamePhase]);
 
+  // AI DIRECTOR LOGIC
+  const assessDirectorAction = useCallback(() => {
+    const currentState = gameStateRef.current;
+    const towerValue = currentState.towers.reduce((sum, t) => sum + t.totalInvested, 0);
+    const powerScore = currentState.gold + towerValue + (currentState.lives * 10);
+    const config = STAGE_CONFIGS[currentState.currentStage];
+    
+    // Wave 1 power score is just starting gold. 
+    // We expect player power to grow by ~250 per wave.
+    const expectedPower = config.startingGold + (currentState.wave * 300);
+
+    let action: DirectorActionType = 'NONE';
+    let scaling = 1.0;
+    let goldBonus = 1.0;
+    let cooldownMult = 1.0;
+    let intel = "";
+
+    if (powerScore > expectedPower * 1.5) {
+        action = 'ELITE';
+        scaling = 1.2;
+        goldBonus = 1.25;
+        intel = "DIRECTOR: High threat level detected. Elite units deployed.";
+    } else if (powerScore < expectedPower * 0.7 || currentState.lives < 5) {
+        action = 'SUPPLY';
+        cooldownMult = 0.9; // 10% faster cooldowns
+        intel = "DIRECTOR: Reinforcements authorized. Hold the line.";
+        // Immediate gold bonus in startNextWave
+    } else {
+        action = 'NONE';
+        const randomTip = TACTICAL_INTEL_POOL[Math.floor(Math.random() * TACTICAL_INTEL_POOL.length)];
+        intel = randomTip;
+    }
+
+    return { action, scaling, goldBonus, cooldownMult, intel };
+  }, []);
+
   const startNextWave = async () => {
     if (gameState.waveStatus !== 'IDLE' || gameState.isChoosingAugment) return;
     
@@ -699,10 +746,28 @@ const App: React.FC = () => {
         return;
     }
 
-    performWaveStart(nextWaveNum);
+    // AI Director Assessment
+    const dda = assessDirectorAction();
+    let supplyGold = 0;
+    if (dda.action === 'SUPPLY') {
+        supplyGold = 150;
+    }
+
+    setGameState(prev => ({
+        ...prev,
+        directorAction: dda.action,
+        directorScaling: dda.scaling,
+        directorGoldBonus: dda.goldBonus,
+        directorCooldownMult: dda.cooldownMult,
+        waveIntel: dda.intel,
+        gold: prev.gold + supplyGold,
+        stats: { ...prev.stats, totalGoldEarned: prev.stats.totalGoldEarned + supplyGold }
+    }));
+
+    performWaveStart(nextWaveNum, dda.scaling);
   };
 
-  const performWaveStart = (waveNum: number) => {
+  const performWaveStart = (waveNum: number, ddaScaling: number = 1.0) => {
     const stageId = gameState.currentStage;
     const waveDefinition = getWaveDefinition(stageId, waveNum);
     const stageConfig = STAGE_CONFIGS[stageId];
@@ -710,8 +775,7 @@ const App: React.FC = () => {
     setGameState(prev => ({ 
       ...prev, 
       wave: waveNum, 
-      waveStatus: 'SPAWNING', 
-      waveIntel: waveDefinition.intel || "Incoming hostiles." 
+      waveStatus: 'SPAWNING'
     }));
 
     let globalDelayOffset = 0;
@@ -724,7 +788,8 @@ const App: React.FC = () => {
             const spawnDelay = globalDelayOffset + (i * interval);
             
             setTimeout(() => {
-                if (gameStateRef.current.isGameOver) return;
+                const currentGS = gameStateRef.current;
+                if (currentGS.isGameOver) return;
                 
                 setGameState(prev => {
                     const stats = ENEMY_STATS[type];
@@ -736,7 +801,8 @@ const App: React.FC = () => {
                     }
                     
                     const startPos = stageConfig.paths[pathId][0];
-                    const scaledHealth = stats.health * (1 + (waveNum * 0.1)) * stageConfig.enemyScaling;
+                    // USE DIRECTOR SCALING HERE
+                    const scaledHealth = stats.health * (1 + (waveNum * 0.1)) * stageConfig.enemyScaling * ddaScaling;
                     
                     const newEnemy: Enemy = {
                         id: Math.random().toString(), 
@@ -825,7 +891,23 @@ const App: React.FC = () => {
           augmentChoices: [],
           gameSpeed: 1
       }));
-      performWaveStart(nextWaveToStart);
+      
+      // Perform Director DDA for wave starting after augment
+      const dda = assessDirectorAction();
+      let supplyGold = 0;
+      if (dda.action === 'SUPPLY') supplyGold = 150;
+
+      setGameState(prev => ({
+        ...prev,
+        directorAction: dda.action,
+        directorScaling: dda.scaling,
+        directorGoldBonus: dda.goldBonus,
+        directorCooldownMult: dda.cooldownMult,
+        waveIntel: dda.intel,
+        gold: prev.gold + supplyGold
+      }));
+
+      performWaveStart(nextWaveToStart, dda.scaling);
   };
 
   const executeAbilityOnTowers = (towerIds: string[]) => {
@@ -872,8 +954,9 @@ const App: React.FC = () => {
 
                         if (e.health <= 0 && !e.isBoss) { 
                             const stats = ENEMY_STATS[e.type]; 
-                            nextGold += stats.goldReward; 
-                            nextStats.totalGoldEarned += stats.goldReward;
+                            const reward = Math.floor(stats.goldReward * prev.directorGoldBonus);
+                            nextGold += reward; 
+                            nextStats.totalGoldEarned += reward;
                         } 
                     }
                 });
@@ -936,8 +1019,9 @@ const App: React.FC = () => {
 
                  if (e.health <= 0 && !e.isBoss) {
                      const stats = ENEMY_STATS[e.type];
-                     nextGold += stats.goldReward;
-                     nextStats.totalGoldEarned += stats.goldReward;
+                     const reward = Math.floor(stats.goldReward * prev.directorGoldBonus);
+                     nextGold += reward;
+                     nextStats.totalGoldEarned += reward;
                  }
              }
           });
@@ -1193,7 +1277,11 @@ const App: React.FC = () => {
           towersBuilt: 0,
           abilitiesUsed: 0
       },
-      bossDeathTimer: 0
+      bossDeathTimer: 0,
+      directorAction: 'NONE',
+      directorScaling: 1,
+      directorGoldBonus: 1,
+      directorCooldownMult: 1
     }));
     setPendingPlacement(null);
   };

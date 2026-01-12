@@ -263,6 +263,8 @@ export interface GameStats {
   abilitiesUsed: number;
 }
 
+export type DirectorActionType = 'NONE' | 'ELITE' | 'SUPPLY';
+
 export interface GameState {
   gold: number;
   lives: number;
@@ -290,4 +292,10 @@ export interface GameState {
   gamePhase: GamePhase;
   stats: GameStats;
   bossDeathTimer: number;
+
+  // AI Director DDA Fields
+  directorAction: DirectorActionType;
+  directorScaling: number;
+  directorGoldBonus: number;
+  directorCooldownMult: number;
 }

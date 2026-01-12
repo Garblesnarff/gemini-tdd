@@ -2,7 +2,7 @@
 import React, { useMemo } from 'react';
 import { GameState, TowerType, TechPath, ActiveAbilityType, TargetPriority, Vector3Tuple, Augment, StageId, BossAbilityType } from '../types';
 import { TOWER_STATS, TECH_PATH_INFO, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, STAGE_CONFIGS } from '../constants';
-import { Heart, Coins, Swords, Shield, Zap, Info, ChevronRight, RefreshCcw, Radio, Eye, X, ArrowUpCircle, Check, Play, Pause, FastForward, Trash2, Crosshair, Target, Cpu, Flame, Snowflake, Ghost, Bomb, Lock, Star, Map, Skull, Timer, Medal } from 'lucide-react';
+import { Heart, Coins, Swords, Shield, Zap, Info, ChevronRight, RefreshCcw, Radio, Eye, X, ArrowUpCircle, Check, Play, Pause, FastForward, Trash2, Crosshair, Target, Cpu, Flame, Snowflake, Ghost, Bomb, Lock, Star, Map, Skull, Timer, Medal, AlertCircle, Package } from 'lucide-react';
 
 interface HUDProps {
   gameState: GameState;
@@ -260,6 +260,30 @@ const HUD: React.FC<HUDProps> = ({
 
   const baseStats = selectedTower ? TOWER_STATS[selectedTower.type] : null;
   const isPlaying = gameState.gamePhase === 'PLAYING' || gameState.gamePhase === 'BOSS_FIGHT' || gameState.gamePhase === 'BOSS_DEATH';
+
+  const directorBorderClass = useMemo(() => {
+    if (gameState.directorAction === 'ELITE') return 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)]';
+    if (gameState.directorAction === 'SUPPLY') return 'border-green-500 shadow-[0_0_15px_rgba(34,197,94,0.3)]';
+    return 'border-blue-500/50';
+  }, [gameState.directorAction]);
+
+  const directorIcon = useMemo(() => {
+    if (gameState.directorAction === 'ELITE') return <AlertCircle size={14} className="animate-pulse text-red-400" />;
+    if (gameState.directorAction === 'SUPPLY') return <Package size={14} className="animate-bounce text-green-400" />;
+    return <Radio size={14} className="animate-pulse" />;
+  }, [gameState.directorAction]);
+
+  const directorHeader = useMemo(() => {
+    if (gameState.directorAction === 'ELITE') return 'High Threat Alert';
+    if (gameState.directorAction === 'SUPPLY') return 'Logistics Support';
+    return 'Incoming Transmission';
+  }, [gameState.directorAction]);
+
+  const directorHeaderColor = useMemo(() => {
+    if (gameState.directorAction === 'ELITE') return 'text-red-400';
+    if (gameState.directorAction === 'SUPPLY') return 'text-green-400';
+    return 'text-blue-400';
+  }, [gameState.directorAction]);
 
   return (
     <div className="fixed inset-0 pointer-events-none p-4 md:p-6 select-none font-sans z-10">
@@ -577,14 +601,14 @@ const HUD: React.FC<HUDProps> = ({
                 <button onClick={onReset} className="bg-slate-900/80 backdrop-blur-md border border-slate-700/50 w-14 rounded-xl flex items-center justify-center hover:bg-slate-800 hover:text-white text-slate-400 transition-all shadow-xl shadow-black/20 active:scale-95" title="Restart Game"><RefreshCcw size={20} /></button>
             </div>
 
-            {/* Bottom Left: Tactical Intel */}
+            {/* Bottom Left: Tactical Intel (AI Director Integrated) */}
             <div className="absolute bottom-24 left-4 md:bottom-6 md:left-6 max-w-[280px] md:max-w-sm pointer-events-auto">
-                <div className="bg-slate-900/90 backdrop-blur-md border-l-4 border-blue-500 p-4 rounded-r-xl shadow-2xl shadow-black/50 overflow-hidden">
-                    <div className="flex items-center gap-2 mb-2 text-blue-400 border-b border-blue-500/20 pb-2">
-                        <Radio size={14} className="animate-pulse" />
-                        <span className="text-[10px] font-bold uppercase tracking-[0.2em]">Incoming Transmission</span>
+                <div className={`bg-slate-900/90 backdrop-blur-md border-l-4 p-4 rounded-r-xl shadow-2xl shadow-black/50 overflow-hidden transition-all duration-300 border ${directorBorderClass}`}>
+                    <div className={`flex items-center gap-2 mb-2 border-b border-slate-700/20 pb-2 ${directorHeaderColor}`}>
+                        {directorIcon}
+                        <span className="text-[10px] font-bold uppercase tracking-[0.2em]">{directorHeader}</span>
                     </div>
-                    <p className="text-slate-300 text-sm leading-relaxed font-mono"><span className="text-blue-500 mr-2">Cmdr:</span>{gameState.waveIntel}</p>
+                    <p className="text-slate-300 text-sm leading-relaxed font-mono"><span className={`mr-2 ${directorHeaderColor}`}>DIRECTOR:</span>{gameState.waveIntel}</p>
                 </div>
             </div>
 
