@@ -2,7 +2,7 @@
 import React, { useMemo } from 'react';
 import { GameState, TowerType, TechPath, ActiveAbilityType, TargetPriority, Vector3Tuple, Augment, StageId, BossAbilityType } from '../types';
 import { TOWER_STATS, TECH_PATH_INFO, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, STAGE_CONFIGS } from '../constants';
-import { Heart, Coins, Swords, Shield, Zap, Info, ChevronRight, RefreshCcw, Radio, Eye, X, ArrowUpCircle, Check, Play, Pause, FastForward, Trash2, Crosshair, Target, Cpu, Flame, Snowflake, Ghost, Bomb, Lock, Star, Map, Skull } from 'lucide-react';
+import { Heart, Coins, Swords, Shield, Zap, Info, ChevronRight, RefreshCcw, Radio, Eye, X, ArrowUpCircle, Check, Play, Pause, FastForward, Trash2, Crosshair, Target, Cpu, Flame, Snowflake, Ghost, Bomb, Lock, Star, Map, Skull, Timer, Medal } from 'lucide-react';
 
 interface HUDProps {
   gameState: GameState;
@@ -42,7 +42,6 @@ const AbilityHotbar: React.FC<{
 }> = ({ gameState, onBatchTrigger }) => {
     
     const abilityStats = useMemo(() => {
-        // Explicitly typed record to ensure map iteration works correctly
         const stats: Record<string, AbilityStat> = {
             [ActiveAbilityType.ERUPTION]: { count: 0, ready: 0, maxCd: 0, currentCd: 0, label: 'ERUPT', key: '1', color: 'red' },
             [ActiveAbilityType.OVERCLOCK]: { count: 0, ready: 0, maxCd: 0, currentCd: 0, label: 'CLOCK', key: '2', color: 'cyan' },
@@ -57,11 +56,9 @@ const AbilityHotbar: React.FC<{
 
             s.count++;
             if (t.abilityCooldown <= 0) {
-                // Special check for ORBITAL_STRIKE: It's global, so it doesn't need a local target check
                 if (t.activeType === ActiveAbilityType.ORBITAL_STRIKE) {
                     s.ready++;
                 } else {
-                    // Other abilities need a valid target in range
                     const hasTarget = gameState.enemies.some(enemy => {
                         const dist = Math.sqrt(
                             Math.pow(enemy.position.x - t.position.x, 2) +
@@ -113,7 +110,6 @@ const AbilityHotbar: React.FC<{
                                     : 'bg-slate-950/90 border-slate-800 cursor-not-allowed grayscale'}
                         `}
                     >
-                        {/* Cooldown Fill */}
                         {s.currentCd > 0 && !isTargeting && (
                             <div 
                                 className="absolute bottom-0 left-0 right-0 bg-slate-800/80 origin-bottom z-0"
@@ -128,7 +124,6 @@ const AbilityHotbar: React.FC<{
                             </span>
                         </div>
 
-                        {/* Ready Badge */}
                         {hasTech && (
                             <div className={`absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black border border-slate-800 shadow-lg z-20
                                 ${s.ready > 0 ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400'}
@@ -137,7 +132,6 @@ const AbilityHotbar: React.FC<{
                             </div>
                         )}
 
-                        {/* Hotkey Indicator */}
                         <div className="absolute bottom-0.5 left-1 text-[8px] font-bold text-slate-500 uppercase">{s.key}</div>
                     </button>
                 );
@@ -154,7 +148,6 @@ const BossHealthBar: React.FC<{ gameState: GameState }> = ({ gameState }) => {
     const config = boss.bossConfig;
     const phase = boss.currentPhase || 0;
     
-    // Markers based on config thresholds (skip 1.0/100%)
     const markers = config.phases
         .filter(p => p.healthThreshold < 1.0)
         .map(p => p.healthThreshold * 100);
@@ -171,31 +164,22 @@ const BossHealthBar: React.FC<{ gameState: GameState }> = ({ gameState }) => {
              </div>
              
              <div className="relative w-full h-8 bg-slate-950 border-2 border-red-900/50 rounded-lg overflow-hidden shadow-[0_0_30px_rgba(220,38,38,0.3)]">
-                 {/* Background Strips */}
                  <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,0,0,0.1)_25%,rgba(255,0,0,0.1)_50%,transparent_50%,transparent_75%,rgba(255,0,0,0.1)_75%,rgba(255,0,0,0.1)_100%)] bg-[length:20px_20px] animate-[pulse_2s_infinite]" />
-                 
-                 {/* Health Fill */}
                  <div 
                     className="absolute inset-0 bg-gradient-to-r from-red-700 via-red-600 to-red-500 transition-all duration-300 ease-out" 
                     style={{ width: `${healthPct}%` }}
                  />
-                 
-                 {/* Phase Markers */}
                  {markers.map(m => (
                      <div key={m} className="absolute top-0 bottom-0 w-0.5 bg-black/70 z-10 flex flex-col justify-end pb-1 items-center" style={{ left: `${m}%` }}>
                         <div className="w-2 h-2 rounded-full bg-red-900 border border-black/50" />
                      </div>
                  ))}
-
-                 {/* Text Overlay */}
                  <div className="absolute inset-0 flex items-center justify-center">
                      <span className="text-xs font-bold text-white drop-shadow-md">{Math.ceil(boss.health)} / {boss.maxHealth}</span>
                  </div>
              </div>
 
-             {/* Boss Abilities & Phase */}
              <div className="flex items-center justify-between w-full px-2 mt-2">
-                 {/* Phase Indicator */}
                 <div className="flex items-center gap-2">
                     {config.phases.map((p, i) => (
                         <div 
@@ -211,16 +195,10 @@ const BossHealthBar: React.FC<{ gameState: GameState }> = ({ gameState }) => {
                     <span className="text-[10px] font-bold text-red-400 ml-1 uppercase">PHASE {phase + 1}</span>
                 </div>
 
-                {/* Ability Icons */}
                 <div className="flex gap-2">
                     {config.abilities.map(ability => {
                         const cooldown = boss.abilityCooldowns[ability.id] || 0;
                         const isReady = cooldown <= 0;
-                        
-                        // Check if unlocked logic from App.tsx repeated or simplified here
-                        // Simple check: if abilityUnlock is set in a future phase, show as locked
-                        // We will simplify visually: if ready, bright. If cd, dim.
-                        
                         let Icon = Zap;
                         if (ability.type === BossAbilityType.SHIELD_PULSE) Icon = Shield;
                         if (ability.type === BossAbilityType.SPAWN_MINIONS) Icon = Ghost;
@@ -273,7 +251,7 @@ const HUD: React.FC<HUDProps> = ({
     : null;
 
   const baseStats = selectedTower ? TOWER_STATS[selectedTower.type] : null;
-  const isPlaying = gameState.gamePhase === 'PLAYING' || gameState.gamePhase === 'BOSS_FIGHT';
+  const isPlaying = gameState.gamePhase === 'PLAYING' || gameState.gamePhase === 'BOSS_FIGHT' || gameState.gamePhase === 'BOSS_DEATH';
 
   return (
     <div className="fixed inset-0 pointer-events-none p-4 md:p-6 select-none font-sans">
@@ -299,7 +277,7 @@ const HUD: React.FC<HUDProps> = ({
 
       {/* --- STAGE SELECT OVERLAY --- */}
       {gameState.gamePhase === 'STAGE_SELECT' && (
-         <div className="absolute inset-0 bg-slate-900/95 flex flex-col items-center justify-center z-50 pointer-events-auto p-10">
+         <div className="absolute inset-0 bg-slate-900/95 flex flex-col items-center justify-center z-50 pointer-events-auto p-10 overflow-y-auto">
              <div className="w-full max-w-6xl">
                  <button onClick={onGoToMenu} className="mb-8 text-slate-400 hover:text-white flex items-center gap-2 font-bold uppercase tracking-wider text-xs"><ChevronRight className="rotate-180" size={16}/> Return to Menu</button>
                  <h2 className="text-4xl font-black text-white mb-10 tracking-tight flex items-center gap-3"><Map size={32} className="text-blue-500" /> SECTOR SELECTION</h2>
@@ -374,25 +352,75 @@ const HUD: React.FC<HUDProps> = ({
 
       {/* --- STAGE COMPLETE OVERLAY --- */}
       {gameState.gamePhase === 'STAGE_COMPLETE' && (
-          <div className="absolute inset-0 bg-blue-950/80 backdrop-blur-md flex flex-col items-center justify-center z-50 pointer-events-auto">
-              <div className="flex flex-col items-center gap-6 animate-in zoom-in duration-300">
+          <div className="absolute inset-0 bg-blue-950/90 backdrop-blur-md flex flex-col items-center justify-center z-50 pointer-events-auto">
+              <div className="flex flex-col items-center gap-6 animate-in zoom-in duration-500 max-w-2xl w-full p-8 rounded-3xl border border-blue-500/20 bg-slate-950/50 shadow-2xl">
                   <div className="text-center">
-                      <div className="text-blue-400 font-bold tracking-[0.5em] uppercase text-sm mb-2">Operation Successful</div>
-                      <h1 className="text-6xl font-black text-white tracking-tighter mb-4">SECTOR SECURED</h1>
-                      <div className="flex justify-center gap-2 mb-8">
+                      <div className="text-blue-400 font-bold tracking-[0.5em] uppercase text-sm mb-2 animate-pulse">Operation Successful</div>
+                      <h1 className="text-6xl font-black text-white tracking-tighter mb-6 drop-shadow-[0_0_30px_rgba(59,130,246,0.5)]">SECTOR SECURED</h1>
+                      
+                      {/* Star Rating Animation */}
+                      <div className="flex justify-center gap-4 mb-10">
                           {[1, 2, 3].map(i => {
-                              // Simple logic for stars display based on lives
-                              const earned = (gameState.lives >= 20 && i <= 3) || (gameState.lives >= 10 && i <= 2) || (gameState.lives > 0 && i <= 1);
-                              return <Star key={i} size={48} className={`${earned ? 'text-yellow-400 fill-yellow-400 drop-shadow-[0_0_15px_rgba(250,204,21,0.5)]' : 'text-slate-800'}`} />
+                              const earned = gameState.stageProgress[gameState.currentStage].stars >= i;
+                              return (
+                                  <div key={i} className={`transform transition-all duration-1000 ${earned ? 'scale-100' : 'scale-90 grayscale opacity-30'}`} style={{ transitionDelay: `${i * 200}ms` }}>
+                                      <Star size={64} className={`${earned ? 'text-yellow-400 fill-yellow-400 drop-shadow-[0_0_20px_rgba(250,204,21,0.6)] animate-in zoom-in spin-in-3' : 'text-slate-700'}`} />
+                                  </div>
+                              )
                           })}
                       </div>
                   </div>
+
+                  {/* Statistics Grid */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full mb-8">
+                      <div className="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 flex flex-col items-center">
+                          <Timer className="text-blue-400 mb-2" />
+                          <div className="text-2xl font-black text-white">{((gameState.stats.endTime - gameState.stats.startTime) / 1000).toFixed(0)}s</div>
+                          <div className="text-[10px] uppercase font-bold text-slate-500">Duration</div>
+                      </div>
+                      <div className="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 flex flex-col items-center">
+                          <Coins className="text-yellow-400 mb-2" />
+                          <div className="text-2xl font-black text-white">{gameState.stats.totalGoldEarned}</div>
+                          <div className="text-[10px] uppercase font-bold text-slate-500">Gold Earned</div>
+                      </div>
+                      <div className="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 flex flex-col items-center">
+                          <Swords className="text-red-400 mb-2" />
+                          <div className="text-2xl font-black text-white">{gameState.stats.towersBuilt}</div>
+                          <div className="text-[10px] uppercase font-bold text-slate-500">Systems Built</div>
+                      </div>
+                      <div className="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 flex flex-col items-center">
+                          <Zap className="text-purple-400 mb-2" />
+                          <div className="text-2xl font-black text-white">{gameState.stats.abilitiesUsed}</div>
+                          <div className="text-[10px] uppercase font-bold text-slate-500">Abilities Used</div>
+                      </div>
+                  </div>
                   
-                  <div className="flex gap-4">
-                      <button onClick={onGoToStageSelect} className="bg-slate-800 hover:bg-slate-700 text-white px-8 py-3 rounded-xl font-bold transition-all border border-slate-700">
-                          SECTOR MAP
+                  <div className="flex gap-4 w-full justify-center">
+                      <button onClick={onGoToStageSelect} className="bg-transparent border border-slate-600 hover:border-white text-slate-300 hover:text-white px-8 py-4 rounded-xl font-bold transition-all uppercase tracking-wider flex items-center gap-2">
+                          <Map size={18} /> Sector Map
                       </button>
-                      {/* Could add 'Next Level' button logic here easily */}
+                      <button onClick={onReset} className="bg-slate-800 hover:bg-slate-700 text-white px-8 py-4 rounded-xl font-bold transition-all border border-slate-700 uppercase tracking-wider flex items-center gap-2">
+                          <RefreshCcw size={18} /> Replay
+                      </button>
+                      
+                      {/* Next Stage Button */}
+                      {(() => {
+                          const stages = Object.keys(STAGE_CONFIGS);
+                          const currentIdx = stages.indexOf(gameState.currentStage);
+                          if (currentIdx < stages.length - 1) {
+                              const nextStageId = stages[currentIdx + 1] as StageId;
+                              return (
+                                  <button onClick={() => onStartStage(nextStageId)} className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-xl font-bold transition-all shadow-lg shadow-blue-500/30 uppercase tracking-wider flex items-center gap-2 hover:scale-105">
+                                      Next Mission <ChevronRight size={18} />
+                                  </button>
+                              );
+                          }
+                          return (
+                              <div className="bg-yellow-600/20 border border-yellow-500/50 text-yellow-500 px-8 py-4 rounded-xl font-bold uppercase tracking-wider flex items-center gap-2">
+                                  <Medal size={18} /> Campaign Complete
+                              </div>
+                          );
+                      })()}
                   </div>
               </div>
           </div>

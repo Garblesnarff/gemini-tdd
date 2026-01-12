@@ -37,9 +37,6 @@ const NukeEffect: React.FC<{ position: Vector3Tuple, color: string, progress: nu
 };
 
 const PortalEffect: React.FC<{ position: Vector3Tuple, color: string, progress: number }> = ({ position, color, progress }) => {
-    // Spawns, holds, then shrinks
-    // progress 0 -> 1
-    // Scale: 0 -> 1 (0.2s), 1 (hold), 1 -> 0 (end)
     let scale = 0;
     if (progress < 0.2) scale = progress * 5;
     else if (progress > 0.8) scale = (1 - progress) * 5;
@@ -63,10 +60,8 @@ const PortalEffect: React.FC<{ position: Vector3Tuple, color: string, progress: 
                     <circleGeometry args={[1.4, 32]} />
                     <meshBasicMaterial color="#000" transparent opacity={0.9} />
                  </mesh>
-                 {/* Swirl */}
                  <Sparkles count={40} scale={2} size={6} speed={2} color={color} />
             </group>
-            {/* Vertical Beam */}
             <mesh position={[0, 2, 0]} scale={[scale, 1, scale]}>
                 <cylinderGeometry args={[1.5, 1.5, 4, 32, 1, true]} />
                 <meshBasicMaterial color={color} transparent opacity={0.2} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
@@ -135,7 +130,7 @@ const FreezeEffect: React.FC<{ position: Vector3Tuple, color: string, progress: 
 
 // --- UNIT COMPONENTS ---
 
-const BossUnit: React.FC<{ boss: Boss }> = ({ boss }) => {
+const BossUnit: React.FC<{ boss: Boss, isDying: boolean }> = ({ boss, isDying }) => {
     const groupRef = useRef<THREE.Group>(null);
     const coreRef = useRef<THREE.Mesh>(null);
     const ringRef = useRef<THREE.Mesh>(null);
@@ -145,7 +140,6 @@ const BossUnit: React.FC<{ boss: Boss }> = ({ boss }) => {
     const config = boss.bossConfig;
     const size = config.size;
     
-    // Derived from active phase config
     const activePhaseConfig = config.phases[phase];
     const visualState = activePhaseConfig?.visualChange || 'unstable';
 
@@ -158,6 +152,17 @@ const BossUnit: React.FC<{ boss: Boss }> = ({ boss }) => {
     useFrame((state, delta) => {
         if (!groupRef.current) return;
         
+        if (isDying) {
+            // Death Animation
+            groupRef.current.rotation.x += delta * 2;
+            groupRef.current.rotation.z += delta * 2;
+            const jitter = 0.5;
+            groupRef.current.position.x = boss.position.x + (Math.random() - 0.5) * jitter;
+            groupRef.current.position.z = boss.position.z + (Math.random() - 0.5) * jitter;
+            groupRef.current.scale.multiplyScalar(0.99); // Shrink slowly
+            return;
+        }
+
         // Hover
         groupRef.current.position.y = 1.5 + Math.sin(state.clock.elapsedTime * 2) * 0.2;
         
@@ -168,7 +173,6 @@ const BossUnit: React.FC<{ boss: Boss }> = ({ boss }) => {
             ringRef.current.rotation.x += delta * speed * 0.5;
         }
 
-        // Pulse core
         if (coreRef.current) {
              const scale = 1 + Math.sin(state.clock.elapsedTime * (isEnraged ? 15 : 3)) * (isEnraged ? 0.2 : 0.1);
              coreRef.current.scale.setScalar(scale);
@@ -182,13 +186,11 @@ const BossUnit: React.FC<{ boss: Boss }> = ({ boss }) => {
              }
         }
         
-        // Unstable jitter
         if (isUnstable) {
              groupRef.current.position.x += (Math.random() - 0.5) * 0.15;
              groupRef.current.position.z += (Math.random() - 0.5) * 0.15;
         }
 
-        // Active Ability Shield Animation
         if (boss.isShielded && shieldRef.current) {
             shieldRef.current.rotation.y += delta * 2;
             shieldRef.current.rotation.z += delta;
@@ -203,77 +205,50 @@ const BossUnit: React.FC<{ boss: Boss }> = ({ boss }) => {
                 {/* Core Body */}
                 <mesh ref={coreRef} castShadow receiveShadow>
                      <boxGeometry args={[size * 0.6, size * 0.6, size * 0.6]} />
-                     <meshStandardMaterial color={color} emissive={color} emissiveIntensity={isEnraged ? 3 : 0.5} />
+                     <meshStandardMaterial color={color} emissive={color} emissiveIntensity={isEnraged ? 3 : 0.5} transparent={isDying} opacity={isDying ? 0.5 : 1} />
                 </mesh>
                 
                 {/* Armor Plates */}
-                <group>
-                    <mesh position={[size * 0.4, 0, 0]} castShadow>
-                        <boxGeometry args={[size * 0.1, size * 0.8, size * 0.4]} />
-                        <meshStandardMaterial color="#1e293b" metalness={0.8} roughness={0.2} />
-                    </mesh>
-                    <mesh position={[-size * 0.4, 0, 0]} castShadow>
-                        <boxGeometry args={[size * 0.1, size * 0.8, size * 0.4]} />
-                        <meshStandardMaterial color="#1e293b" metalness={0.8} roughness={0.2} />
-                    </mesh>
-                </group>
+                {!isDying && (
+                    <group>
+                        <mesh position={[size * 0.4, 0, 0]} castShadow>
+                            <boxGeometry args={[size * 0.1, size * 0.8, size * 0.4]} />
+                            <meshStandardMaterial color="#1e293b" metalness={0.8} roughness={0.2} />
+                        </mesh>
+                        <mesh position={[-size * 0.4, 0, 0]} castShadow>
+                            <boxGeometry args={[size * 0.1, size * 0.8, size * 0.4]} />
+                            <meshStandardMaterial color="#1e293b" metalness={0.8} roughness={0.2} />
+                        </mesh>
+                    </group>
+                )}
 
                 {/* Rotating Ring */}
                 <mesh ref={ringRef} rotation={[Math.PI / 2, 0, 0]}>
                     <torusGeometry args={[size * 0.8, size * 0.05, 8, 32]} />
-                    <meshStandardMaterial color="#fff" emissive="#fff" emissiveIntensity={0.8} />
+                    <meshStandardMaterial color="#fff" emissive="#fff" emissiveIntensity={0.8} transparent={isDying} opacity={isDying ? 0.2 : 1} />
                 </mesh>
 
-                {/* Phase Shield Bubble (Passive) */}
-                {isPhaseShielded && (
+                {isPhaseShielded && !isDying && (
                     <mesh>
                         <sphereGeometry args={[size * 1.2, 32, 32]} />
-                        <meshPhysicalMaterial 
-                            color="#3b82f6" 
-                            transparent 
-                            opacity={0.2} 
-                            transmission={0.4} 
-                            roughness={0} 
-                            thickness={0.5}
-                        />
+                        <meshPhysicalMaterial color="#3b82f6" transparent opacity={0.2} transmission={0.4} roughness={0} thickness={0.5} />
                     </mesh>
                 )}
 
-                {/* Ability Shield Bubble (Active - Invulnerable) */}
-                {boss.isShielded && (
+                {boss.isShielded && !isDying && (
                     <mesh ref={shieldRef}>
                         <icosahedronGeometry args={[size * 1.3, 2]} />
                         <meshBasicMaterial color="#60a5fa" wireframe transparent opacity={0.6} />
                     </mesh>
                 )}
-                {boss.isShielded && (
-                     <mesh>
-                        <sphereGeometry args={[size * 1.25, 32, 32]} />
-                        <meshPhysicalMaterial 
-                            color="#93c5fd" 
-                            transparent 
-                            opacity={0.4} 
-                            emissive="#3b82f6"
-                            emissiveIntensity={0.5}
-                            side={THREE.DoubleSide}
-                        />
-                    </mesh>
-                )}
                 
-                {/* Particle Effects */}
-                {isEnraged && (
-                    <Sparkles count={50} scale={size * 2} size={5} speed={2} opacity={1} color="#ef4444" />
-                )}
-                
-                {isUnstable && (
-                    <Sparkles count={30} scale={size * 2} size={3} speed={5} opacity={0.5} color="#fbbf24" noise={1} />
-                )}
+                {isEnraged && <Sparkles count={50} scale={size * 2} size={5} speed={2} opacity={1} color="#ef4444" />}
+                {isUnstable && <Sparkles count={30} scale={size * 2} size={3} speed={5} opacity={0.5} color="#fbbf24" noise={1} />}
             </group>
             
-            {/* Ground Shadow */}
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
                 <circleGeometry args={[size, 32]} />
-                <meshBasicMaterial color="#000" transparent opacity={0.5} />
+                <meshBasicMaterial color="#000" transparent opacity={isDying ? 0.1 : 0.5} />
             </mesh>
         </group>
     );
@@ -545,7 +520,6 @@ const EffectsRenderer: React.FC<{ effects: Effect[] }> = ({ effects }) => {
                 }
                 
                 if (effect.type === 'BLOCKED') {
-                    // Floating text for blocked damage
                     return (
                         <Html key={effect.id} position={[effect.position.x, effect.position.y + progress * 2, effect.position.z]}>
                             <div style={{ 
@@ -609,6 +583,16 @@ const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, s
   const ghostPos = pendingPlacement || hoveredPos;
   const isPending = !!pendingPlacement;
 
+  // Screen shake logic during boss death
+  useFrame((state) => {
+      if (gameState.gamePhase === 'BOSS_DEATH') {
+          const shakeIntensity = 0.2;
+          state.camera.position.x += (Math.random() - 0.5) * shakeIntensity;
+          state.camera.position.y += (Math.random() - 0.5) * shakeIntensity;
+          state.camera.position.z += (Math.random() - 0.5) * shakeIntensity;
+      }
+  });
+
   return (
     <>
       <ambientLight intensity={0.5} />
@@ -671,7 +655,7 @@ const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, s
 
       {gameState.enemies.map(enemy => (
         enemy.isBoss ? (
-             <BossUnit key={enemy.id} boss={enemy as Boss} />
+             <BossUnit key={enemy.id} boss={enemy as Boss} isDying={gameState.gamePhase === 'BOSS_DEATH'} />
         ) : (
             <group key={enemy.id} position={[enemy.position.x, enemy.position.y + 0.5, enemy.position.z]}>
             <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>

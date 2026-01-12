@@ -140,7 +140,7 @@ export enum StageId {
   STAGE_5 = 'STAGE_5'
 }
 
-export type GamePhase = 'MENU' | 'STAGE_SELECT' | 'PLAYING' | 'BOSS_INTRO' | 'BOSS_FIGHT' | 'STAGE_COMPLETE' | 'GAME_OVER';
+export type GamePhase = 'MENU' | 'STAGE_SELECT' | 'PLAYING' | 'BOSS_INTRO' | 'BOSS_FIGHT' | 'BOSS_DEATH' | 'STAGE_COMPLETE' | 'GAME_OVER';
 
 export interface StageEnvironment {
   skyPreset: string;
@@ -240,6 +240,14 @@ export interface WaveDefinition {
   intel?: string; 
 }
 
+export interface GameStats {
+  startTime: number;
+  endTime: number;
+  totalGoldEarned: number;
+  towersBuilt: number;
+  abilitiesUsed: number;
+}
+
 export interface GameState {
   gold: number;
   lives: number;
@@ -264,4 +272,6 @@ export interface GameState {
   activeBoss: Boss | null;
   bossAnnouncement: string | null;
   gamePhase: GamePhase;
+  stats: GameStats;
+  bossDeathTimer: number;
 }

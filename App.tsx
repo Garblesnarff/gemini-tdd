@@ -38,7 +38,15 @@ const App: React.FC = () => {
     },
     activeBoss: null,
     bossAnnouncement: null,
-    gamePhase: 'MENU' // Start in Menu
+    gamePhase: 'MENU',
+    stats: {
+        startTime: 0,
+        endTime: 0,
+        totalGoldEarned: 0,
+        towersBuilt: 0,
+        abilitiesUsed: 0
+    },
+    bossDeathTimer: 0
   });
 
   const [selectedTowerType, setSelectedTowerType] = useState<TowerType>(TowerType.BASIC);
@@ -62,8 +70,8 @@ const App: React.FC = () => {
 
   // Main Game Loop Logic
   useEffect(() => {
-    // Only run loop in active gameplay phases
-    if (gameState.gamePhase !== 'PLAYING' && gameState.gamePhase !== 'BOSS_FIGHT') return;
+    // Run loop in PLAYING, BOSS_FIGHT, and BOSS_DEATH phases
+    if (gameState.gamePhase !== 'PLAYING' && gameState.gamePhase !== 'BOSS_FIGHT' && gameState.gamePhase !== 'BOSS_DEATH') return;
     if (gameState.isGameOver) return;
 
     const interval = setInterval(() => {
@@ -74,7 +82,7 @@ const App: React.FC = () => {
         const currentStageConfig = STAGE_CONFIGS[prev.currentStage];
         const activePath = currentStageConfig.path;
 
-        const nextEnemies = [...prev.enemies];
+        let nextEnemies = [...prev.enemies];
         const nextProjectiles = [...prev.projectiles];
         const nextTowers = [...prev.towers];
         const nextEffects = [...prev.effects];
@@ -84,6 +92,75 @@ const App: React.FC = () => {
         let nextPhase = prev.gamePhase;
         let nextStageProgress = { ...prev.stageProgress };
         let nextBossAnnouncement = prev.bossAnnouncement;
+        let nextStats = { ...prev.stats };
+        let nextBossDeathTimer = prev.bossDeathTimer;
+
+        // --- BOSS DEATH SEQUENCE HANDLER ---
+        if (prev.gamePhase === 'BOSS_DEATH') {
+            nextBossDeathTimer -= tickDelta;
+            
+            // Random explosions around boss position
+            if (prev.activeBoss && Math.random() < 0.3 * prev.gameSpeed) {
+                nextEffects.push({
+                    id: Math.random().toString(), 
+                    type: 'EXPLOSION', 
+                    position: { 
+                        x: prev.activeBoss.position.x + (Math.random() - 0.5) * 3, 
+                        y: prev.activeBoss.position.y + (Math.random() - 0.5) * 2, 
+                        z: prev.activeBoss.position.z + (Math.random() - 0.5) * 3 
+                    },
+                    color: Math.random() > 0.5 ? '#f97316' : '#ef4444',
+                    scale: 2 + Math.random() * 2,
+                    lifetime: 30,
+                    maxLifetime: 30
+                });
+            }
+
+            // Cleanup effects even during death
+            for (let i = nextEffects.length - 1; i >= 0; i--) {
+                nextEffects[i].lifetime -= 1 * prev.gameSpeed;
+                if (nextEffects[i].lifetime <= 0) nextEffects.splice(i, 1);
+            }
+
+            if (nextBossDeathTimer <= 0) {
+                // TRANSITION TO STAGE COMPLETE
+                nextPhase = 'STAGE_COMPLETE';
+                nextStatus = 'IDLE';
+                nextStats.endTime = Date.now();
+                nextEnemies = []; // Clear boss
+                
+                const stars = nextLives >= 15 ? 3 : nextLives >= 10 ? 2 : 1;
+                
+                // Update Progress
+                const stages = Object.keys(STAGE_CONFIGS);
+                const currentIdx = stages.indexOf(prev.currentStage);
+                
+                // Keep best result
+                const currentProgress = nextStageProgress[prev.currentStage];
+                nextStageProgress[prev.currentStage] = { 
+                    ...currentProgress, 
+                    completed: true, 
+                    stars: Math.max(currentProgress.stars, stars) as 0|1|2|3 
+                };
+                
+                // Unlock Next
+                if (currentIdx < stages.length - 1) {
+                    const nextStageId = stages[currentIdx + 1] as StageId;
+                    nextStageProgress[nextStageId] = { ...nextStageProgress[nextStageId], unlocked: true };
+                }
+            }
+
+            return {
+                ...prev, 
+                effects: nextEffects, 
+                gamePhase: nextPhase, 
+                bossDeathTimer: nextBossDeathTimer, 
+                stageProgress: nextStageProgress, 
+                enemies: nextEnemies,
+                stats: nextStats,
+                waveStatus: nextStatus
+            };
+        }
 
         // --- STEP 1: CALCULATE TOWER STATS (PASSIVES, ACTIVES, AUGMENTS) ---
         nextTowers.forEach(t => {
@@ -148,12 +225,7 @@ const App: React.FC = () => {
           if (enemy.isBoss && enemy.bossConfig) {
              const phase = enemy.bossConfig.phases[enemy.currentPhase || 0];
              speedMultiplier *= phase.speedMultiplier;
-             
-             // Check if actively shielding (ability)
-             if ((enemy as Boss).isShielded) {
-                 // Might reduce speed while shielding
-                 speedMultiplier *= 0.5;
-             }
+             if ((enemy as Boss).isShielded) speedMultiplier *= 0.5;
           }
 
           if (enemy.freezeTimer && enemy.freezeTimer > 0) {
@@ -170,7 +242,6 @@ const App: React.FC = () => {
           }
           if (speedMultiplier === 0) continue;
           
-          // Use dynamic stage path
           const currentWaypoint = activePath[enemy.pathIndex];
           const nextWaypoint = activePath[enemy.pathIndex + 1];
           
@@ -197,7 +268,6 @@ const App: React.FC = () => {
           if (tower.cooldown > 0) return;
           let candidates = nextEnemies.filter(enemy => {
              const dist = Math.sqrt(Math.pow(enemy.position.x - tower.position.x, 2) + Math.pow(enemy.position.z - tower.position.z, 2));
-             // Boss larger hit box compensation
              const hitRadius = enemy.isBoss ? (enemy.bossConfig?.size || 1) * 0.5 : 0;
              return dist <= tower.range + hitRadius;
           });
@@ -235,13 +305,9 @@ const App: React.FC = () => {
           const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
           const moveDist = p.speed * prev.gameSpeed; 
           
-          // Hit check
-          // Boss larger hitbox
           const hitRadius = target.isBoss ? 1 : 0.2;
 
           if (dist < moveDist || dist < hitRadius) {
-            
-            // DAMAGE LOGIC WITH SHIELD CHECK
             let damageDealt = 0;
             let isImmune = false;
 
@@ -249,7 +315,6 @@ const App: React.FC = () => {
                 const boss = target as Boss;
                 if (boss.isShielded) {
                     isImmune = true;
-                    // Shield Hit Effect
                     nextEffects.push({
                         id: Math.random().toString(), type: 'BLOCKED', position: { ...target.position, y: target.position.y + 1 },
                         color: '#3b82f6', scale: 1, lifetime: 20, maxLifetime: 20, text: "BLOCKED"
@@ -271,7 +336,6 @@ const App: React.FC = () => {
                     color: p.color, scale: 0.5, lifetime: 10, maxLifetime: 10
                 });
 
-                // Splash Damage Augment
                 prev.activeAugments.forEach(aug => {
                     if (aug.type === AugmentType.ON_HIT && aug.effect.special === 'SPLASH_DAMAGE' && aug.effect.target === p.sourceType) {
                        nextEffects.push({
@@ -285,13 +349,14 @@ const App: React.FC = () => {
                               let splashDmg = p.damage * aug.effect.value;
                               if (e.isBoss) {
                                   const b = e as Boss;
-                                  if (b.isShielded) splashDmg = 0;
-                                  else {
+                                  if (!b.isShielded) {
                                       const phase = b.bossConfig.phases[b.currentPhase || 0];
                                       splashDmg *= (1 - phase.damageResistance);
+                                      e.health -= splashDmg;
                                   }
+                              } else {
+                                  e.health -= splashDmg;
                               }
-                              e.health -= splashDmg;
                           }
                        });
                     }
@@ -301,16 +366,26 @@ const App: React.FC = () => {
             nextProjectiles.splice(i, 1);
 
             if (target.health <= 0) {
-              const enemyIdx = nextEnemies.indexOf(target);
-              if (enemyIdx > -1) {
-                const stats = ENEMY_STATS[target.type];
-                nextGold += stats.goldReward;
-                nextEnemies.splice(enemyIdx, 1);
-                nextEffects.push({
-                    id: Math.random().toString(), type: 'EXPLOSION', position: { ...target.position, y: 0.5 },
-                    color: stats.color, scale: target.isBoss ? 3 : 1, lifetime: 20, maxLifetime: 20
-                });
-              }
+               // BOSS DEATH CHECK
+               if (target.isBoss) {
+                   // Trigger Boss Death Sequence
+                   nextPhase = 'BOSS_DEATH';
+                   nextBossDeathTimer = 3500; // 3.5 seconds for animation
+                   nextBossAnnouncement = "TARGET DESTROYED";
+                   // Do not remove boss from array yet
+               } else {
+                  const enemyIdx = nextEnemies.indexOf(target);
+                  if (enemyIdx > -1) {
+                    const stats = ENEMY_STATS[target.type];
+                    nextGold += stats.goldReward;
+                    nextStats.totalGoldEarned += stats.goldReward; // Stats Tracking
+                    nextEnemies.splice(enemyIdx, 1);
+                    nextEffects.push({
+                        id: Math.random().toString(), type: 'EXPLOSION', position: { ...target.position, y: 0.5 },
+                        color: stats.color, scale: 1, lifetime: 20, maxLifetime: 20
+                    });
+                  }
+               }
             }
           } else {
             p.position.x += (dx / dist) * moveDist;
@@ -325,21 +400,17 @@ const App: React.FC = () => {
             if (nextEffects[i].lifetime <= 0) nextEffects.splice(i, 1);
         }
 
-        // --- BOSS LOGIC (PHASES & ABILITIES) ---
+        // --- BOSS LOGIC ---
         const bossIndex = nextEnemies.findIndex(e => e.isBoss);
         let currentBoss = bossIndex > -1 ? (nextEnemies[bossIndex] as Boss) : null;
         
-        if (currentBoss && currentBoss.health > 0) {
-            // Update Boss Reference (since we are modifying properties on the object in array)
-            // Note: Mutating object properties inside setGameState is usually unsafe if not copied, 
-            // but we copied nextEnemies via spread, and objects are refs. We should clone the boss object to be safe.
+        if (currentBoss && currentBoss.health > 0 && nextPhase !== 'BOSS_DEATH') {
             const updatedBoss = { ...currentBoss };
-            updatedBoss.abilityCooldowns = { ...currentBoss.abilityCooldowns }; // shallow copy cooldowns
+            updatedBoss.abilityCooldowns = { ...currentBoss.abilityCooldowns }; 
             
             const healthPct = updatedBoss.health / updatedBoss.maxHealth;
             const config = updatedBoss.bossConfig;
             
-            // 1. PHASE TRANSITION LOGIC
             let newPhaseIdx = updatedBoss.currentPhase || 0;
             for (let i = 0; i < config.phases.length; i++) {
                 if (healthPct <= config.phases[i].healthThreshold) {
@@ -356,25 +427,19 @@ const App: React.FC = () => {
                 });
             }
 
-            // 2. ONE-TIME THRESHOLD SPAWNS
             config.minionSpawns.forEach((spawn, idx) => {
                 if (!updatedBoss.triggeredSpawnIndices.includes(idx) && healthPct <= spawn.triggerHealth) {
                     updatedBoss.triggeredSpawnIndices = [...updatedBoss.triggeredSpawnIndices, idx];
                     nextBossAnnouncement = spawn.announcement || "REINFORCEMENTS INCOMING";
-                    
-                    // Spawn logic
                     nextEffects.push({
                         id: Math.random().toString(), type: 'PORTAL', position: updatedBoss.position,
                         color: '#f97316', scale: 2, lifetime: 60, maxLifetime: 60
                     });
-
                     for (let k = 0; k < spawn.count; k++) {
                          const stats = ENEMY_STATS[spawn.enemyType];
-                         // Random offset
                          const offsetX = (Math.random() - 0.5) * 1;
                          const offsetZ = (Math.random() - 0.5) * 1;
                          const spawnPos = { x: updatedBoss.position.x + offsetX, y: updatedBoss.position.y, z: updatedBoss.position.z + offsetZ };
-                         
                          nextEnemies.push({
                             id: Math.random().toString(), type: spawn.enemyType,
                             health: stats.health * 1.2, maxHealth: stats.health * 1.2,
@@ -385,15 +450,12 @@ const App: React.FC = () => {
                 }
             });
 
-            // 3. ABILITY MANAGEMENT
-            // Decrement Cooldowns
             Object.keys(updatedBoss.abilityCooldowns).forEach(key => {
                 if (updatedBoss.abilityCooldowns[key] > 0) {
                     updatedBoss.abilityCooldowns[key] -= tickDelta;
                 }
             });
 
-            // Handle Active Shield Expiration
             if (updatedBoss.isShielded) {
                 if ((updatedBoss.shieldTimer || 0) > 0) {
                     updatedBoss.shieldTimer = (updatedBoss.shieldTimer || 0) - tickDelta;
@@ -406,16 +468,8 @@ const App: React.FC = () => {
                 }
             }
 
-            // Check & Execute Abilities
             config.abilities.forEach(ability => {
-                 // Check if unlocked in current phase
-                 // Logic: Look at all phases <= currentPhase. If abilityUnlock matches this ability ID, it's unlocked.
-                 // OR simpler: If ability ID is NOT mentioned in any higher phase unlocks, assume available?
-                 // Let's implement robust check: 
-                 // Iterate phases up to current. Collect unlocked IDs.
-                 let unlocked = true; // Default to true if not restricted
-                 
-                 // If any phase explicitly unlocks it, assume it starts locked until that phase
+                 let unlocked = true; 
                  const isRestricted = config.phases.some(p => p.abilityUnlock === ability.id);
                  if (isRestricted) {
                      unlocked = false;
@@ -425,7 +479,6 @@ const App: React.FC = () => {
                  }
 
                  if (unlocked && (updatedBoss.abilityCooldowns[ability.id] || 0) <= 0 && !updatedBoss.isShielded) {
-                     // TRIGGER ABILITY
                      updatedBoss.abilityCooldowns[ability.id] = ability.cooldown;
                      
                      if (ability.type === BossAbilityType.SPAWN_MINIONS) {
@@ -434,9 +487,7 @@ const App: React.FC = () => {
                             id: Math.random().toString(), type: 'PORTAL', position: updatedBoss.position,
                             color: '#fbbf24', scale: 2, lifetime: 50, maxLifetime: 50
                         });
-                        // Spawns occur slightly staggered or immediate
-                        // We'll spawn immediately for simplicity
-                        const count = 3 + Math.floor(updatedBoss.currentPhase * 2); // Scale with phase
+                        const count = 3 + Math.floor(updatedBoss.currentPhase * 2); 
                         for (let k = 0; k < count; k++) {
                             const stats = ENEMY_STATS[EnemyType.BASIC];
                             const offsetX = (Math.random() - 0.5) * 2;
@@ -452,41 +503,24 @@ const App: React.FC = () => {
                          updatedBoss.isShielded = true;
                          updatedBoss.shieldTimer = ability.duration || 3000;
                          nextBossAnnouncement = "EMERGENCY SHIELDS ACTIVE";
-                         // Visual handled by BossUnit state
                      }
                  }
             });
-
-            // Re-assign updated boss to enemies array
             nextEnemies[bossIndex] = updatedBoss;
-            currentBoss = updatedBoss; // update local ref for GameState return
+            currentBoss = updatedBoss;
         }
 
 
-        // --- STEP 6: WAVE COMPLETE (Economy Augments) & STAGE VICTORY CHECK ---
+        // --- STEP 6: WAVE COMPLETE (Economy Augments) ---
         if (nextStatus === 'CLEARING' && nextEnemies.length === 0) {
-          if (prev.gamePhase === 'BOSS_FIGHT' && nextLives > 0) {
-              // Boss Defeated
-              nextPhase = 'STAGE_COMPLETE';
-              nextStatus = 'IDLE';
-              
-              // Unlock next stage
-              const stages = Object.keys(STAGE_CONFIGS);
-              const currentIdx = stages.indexOf(prev.currentStage);
-              nextStageProgress[prev.currentStage] = { ...nextStageProgress[prev.currentStage], completed: true, stars: nextLives >= 20 ? 3 : nextLives >= 10 ? 2 : 1 };
-              
-              if (currentIdx < stages.length - 1) {
-                  const nextStageId = stages[currentIdx + 1] as StageId;
-                  nextStageProgress[nextStageId] = { ...nextStageProgress[nextStageId], unlocked: true };
-              }
-          } else {
-              nextStatus = 'IDLE';
-              prev.activeAugments.forEach(aug => {
-                 if (aug.type === AugmentType.ECONOMY && aug.effect.special === 'INTEREST') {
-                    nextGold += Math.floor(nextGold * aug.effect.value);
-                 }
-              });
-          }
+           nextStatus = 'IDLE';
+           prev.activeAugments.forEach(aug => {
+               if (aug.type === AugmentType.ECONOMY && aug.effect.special === 'INTEREST') {
+                   const interest = Math.floor(nextGold * aug.effect.value);
+                   nextGold += interest;
+                   nextStats.totalGoldEarned += interest; // Track interest
+               }
+           });
         }
 
         let nextGameOver = prev.isGameOver;
@@ -498,7 +532,8 @@ const App: React.FC = () => {
         return {
           ...prev, enemies: nextEnemies, projectiles: nextProjectiles, towers: nextTowers,
           effects: nextEffects, gold: nextGold, lives: nextLives, waveStatus: nextStatus, isGameOver: nextGameOver,
-          gamePhase: nextPhase, stageProgress: nextStageProgress, activeBoss: currentBoss || null, bossAnnouncement: nextBossAnnouncement
+          gamePhase: nextPhase, stageProgress: nextStageProgress, activeBoss: currentBoss || null, bossAnnouncement: nextBossAnnouncement,
+          stats: nextStats
         };
       });
     }, TICK_RATE);
@@ -654,6 +689,9 @@ const App: React.FC = () => {
         const nextEffects = [...prev.effects];
         const nextEnemies = prev.enemies.map(e => ({ ...e }));
         let nextGold = prev.gold;
+        let nextStats = { ...prev.stats };
+
+        let abilityTriggered = false;
 
         towerIds.forEach(towerId => {
             const towerIndex = nextTowers.findIndex(t => t.id === towerId);
@@ -666,6 +704,7 @@ const App: React.FC = () => {
             if (!config) return;
 
             nextTowers[towerIndex] = { ...tower, abilityCooldown: config.cooldown };
+            abilityTriggered = true;
 
             if (tower.activeType === ActiveAbilityType.ERUPTION) {
                 nextEffects.push({ id: Math.random().toString(), type: 'NOVA', position: tower.position, color: config.color, scale: 0.1, lifetime: 30, maxLifetime: 30 });
@@ -674,7 +713,11 @@ const App: React.FC = () => {
                     // @ts-ignore
                     if (dist <= config.range) { 
                         e.health -= config.damage; 
-                        if (e.health <= 0) { const stats = ENEMY_STATS[e.type]; nextGold += stats.goldReward; } 
+                        if (e.health <= 0 && !e.isBoss) { 
+                            const stats = ENEMY_STATS[e.type]; 
+                            nextGold += stats.goldReward; 
+                            nextStats.totalGoldEarned += stats.goldReward;
+                        } 
                     }
                 });
             }
@@ -685,8 +728,10 @@ const App: React.FC = () => {
             if (tower.activeType === ActiveAbilityType.OVERCLOCK) nextTowers[towerIndex].abilityDuration = config.duration;
         });
 
-        const survivingEnemies = nextEnemies.filter(e => e.health > 0);
-        return { ...prev, towers: nextTowers, enemies: survivingEnemies, effects: nextEffects, gold: nextGold };
+        if (abilityTriggered) nextStats.abilitiesUsed++;
+
+        const survivingEnemies = nextEnemies.filter(e => e.health > 0 || e.isBoss);
+        return { ...prev, towers: nextTowers, enemies: survivingEnemies, effects: nextEffects, gold: nextGold, stats: nextStats };
     });
   };
 
@@ -698,6 +743,7 @@ const App: React.FC = () => {
           const nextEffects = [...prev.effects];
           const nextEnemies = prev.enemies.map(e => ({ ...e }));
           let nextGold = prev.gold;
+          let nextStats = { ...prev.stats };
           
           const availableTowers = nextTowers.filter(t => t.activeType === type && t.abilityCooldown <= 0);
           if (availableTowers.length === 0) return prev;
@@ -710,6 +756,7 @@ const App: React.FC = () => {
              }
           });
 
+          nextStats.abilitiesUsed++;
           const totalDamage = config.damage * availableTowers.length;
           const radius = 4;
 
@@ -719,15 +766,16 @@ const App: React.FC = () => {
              const dist = Math.sqrt(Math.pow(e.position.x - pos.x, 2) + Math.pow(e.position.z - pos.z, 2));
              if (dist <= radius) {
                  e.health -= totalDamage;
-                 if (e.health <= 0) {
+                 if (e.health <= 0 && !e.isBoss) {
                      const stats = ENEMY_STATS[e.type];
                      nextGold += stats.goldReward;
+                     nextStats.totalGoldEarned += stats.goldReward;
                  }
              }
           });
 
-          const survivingEnemies = nextEnemies.filter(e => e.health > 0);
-          return { ...prev, towers: nextTowers, enemies: survivingEnemies, effects: nextEffects, gold: nextGold, targetingAbility: null };
+          const survivingEnemies = nextEnemies.filter(e => e.health > 0 || e.isBoss);
+          return { ...prev, towers: nextTowers, enemies: survivingEnemies, effects: nextEffects, gold: nextGold, targetingAbility: null, stats: nextStats };
       });
   };
 
@@ -819,7 +867,12 @@ const App: React.FC = () => {
         passiveType: PassiveType.NONE, activeType: ActiveAbilityType.NONE, abilityCooldown: 0, abilityMaxCooldown: 0,
         abilityDuration: 0, targetPriority: TargetPriority.FIRST
       };
-      setGameState(prev => ({ ...prev, gold: prev.gold - stats.cost, towers: [...prev.towers, newTower] }));
+      setGameState(prev => ({ 
+          ...prev, 
+          gold: prev.gold - stats.cost, 
+          towers: [...prev.towers, newTower],
+          stats: { ...prev.stats, towersBuilt: prev.stats.towersBuilt + 1 }
+      }));
       setPendingPlacement(null);
   };
 
@@ -919,7 +972,15 @@ const App: React.FC = () => {
       currentStage: stageId,
       gamePhase: 'PLAYING',
       activeBoss: null,
-      bossAnnouncement: null
+      bossAnnouncement: null,
+      stats: {
+          startTime: Date.now(),
+          endTime: 0,
+          totalGoldEarned: config.startingGold,
+          towersBuilt: 0,
+          abilitiesUsed: 0
+      },
+      bossDeathTimer: 0
     }));
     setPendingPlacement(null);
   };
@@ -937,7 +998,7 @@ const App: React.FC = () => {
             pendingPlacement={pendingPlacement}
             path={STAGE_CONFIGS[gameState.currentStage].path} 
         />
-        <OrbitControls makeDefault maxPolarAngle={Math.PI / 2.2} minDistance={5} maxDistance={30} enabled={gameState.gamePhase === 'PLAYING' || gameState.gamePhase === 'BOSS_FIGHT'} />
+        <OrbitControls makeDefault maxPolarAngle={Math.PI / 2.2} minDistance={5} maxDistance={30} enabled={gameState.gamePhase === 'PLAYING' || gameState.gamePhase === 'BOSS_FIGHT' || gameState.gamePhase === 'BOSS_DEATH'} />
       </Canvas>
 
       <HUD 
