@@ -1,5 +1,5 @@
 
-import { TowerType, EnemyType, TechPath, PassiveType, ActiveAbilityType, Augment, AugmentType, StageId, StageConfig, BossConfig, BossAbilityType, Vector3Tuple, WaveDefinition, WaveGroup } from './types';
+import { TowerType, EnemyType, TechPath, PassiveType, ActiveAbilityType, Augment, AugmentType, StageId, StageConfig, BossConfig, BossAbilityType, Vector3Tuple, WaveDefinition, WaveGroup, StageProgress } from './types';
 
 export const GRID_SIZE = 12;
 
@@ -68,6 +68,14 @@ export const STAGE_CONFIGS: Record<StageId, StageConfig> = {
   [StageId.STAGE_3]: { id: StageId.STAGE_3, name: "Locked", description: "Complete Stage 2 to unlock.", waves: 0, path: [], startingGold: 0, startingLives: 0, enemyScaling: 0, bossConfig: STAGE_1_BOSS, environment: { skyPreset: "sunset", gridColor: "#000", pathColor: "#fff", ambientIntensity: 1 }},
   [StageId.STAGE_4]: { id: StageId.STAGE_4, name: "Locked", description: "Complete Stage 3 to unlock.", waves: 0, path: [], startingGold: 0, startingLives: 0, enemyScaling: 0, bossConfig: STAGE_1_BOSS, environment: { skyPreset: "sunset", gridColor: "#000", pathColor: "#fff", ambientIntensity: 1 }},
   [StageId.STAGE_5]: { id: StageId.STAGE_5, name: "Locked", description: "Complete Stage 4 to unlock.", waves: 0, path: [], startingGold: 0, startingLives: 0, enemyScaling: 0, bossConfig: STAGE_1_BOSS, environment: { skyPreset: "sunset", gridColor: "#000", pathColor: "#fff", ambientIntensity: 1 }},
+};
+
+export const INITIAL_STAGE_PROGRESS: Record<StageId, StageProgress> = {
+  [StageId.STAGE_1]: { unlocked: true, completed: false, bestWave: 0, stars: 0 },
+  [StageId.STAGE_2]: { unlocked: false, completed: false, bestWave: 0, stars: 0 },
+  [StageId.STAGE_3]: { unlocked: false, completed: false, bestWave: 0, stars: 0 },
+  [StageId.STAGE_4]: { unlocked: false, completed: false, bestWave: 0, stars: 0 },
+  [StageId.STAGE_5]: { unlocked: false, completed: false, bestWave: 0, stars: 0 },
 };
 
 export const MAX_LEVEL = 3;

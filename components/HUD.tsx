@@ -24,6 +24,9 @@ interface HUDProps {
   onGoToMenu: () => void;
   onGoToStageSelect: () => void;
   onStartStage: (id: StageId) => void;
+  canContinue: boolean;
+  onContinue: () => void;
+  onNewGame: () => void;
 }
 
 interface AbilityStat {
@@ -244,7 +247,10 @@ const HUD: React.FC<HUDProps> = ({
   onBatchTrigger,
   onGoToMenu,
   onGoToStageSelect,
-  onStartStage
+  onStartStage,
+  canContinue,
+  onContinue,
+  onNewGame
 }) => {
   const selectedTower = gameState.selectedTowerId 
     ? gameState.towers.find(t => t.id === gameState.selectedTowerId) 
@@ -266,9 +272,14 @@ const HUD: React.FC<HUDProps> = ({
                  </div>
                  
                  <div className="flex flex-col gap-4 w-64">
-                    <button onClick={onGoToStageSelect} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2">
-                        <Play size={20} fill="currentColor" />
-                        INITIATE
+                    {canContinue && (
+                        <button onClick={onContinue} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2">
+                            <Play size={20} fill="currentColor" />
+                            CONTINUE
+                        </button>
+                    )}
+                    <button onClick={onNewGame} className="bg-transparent border border-slate-600 hover:border-white text-slate-300 hover:text-white font-bold py-4 rounded-xl transition-all hover:scale-105 flex items-center justify-center gap-2">
+                        {canContinue ? 'NEW OPERATION' : 'INITIATE'}
                     </button>
                  </div>
              </div>

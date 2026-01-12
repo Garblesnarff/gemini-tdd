@@ -4,9 +4,10 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars, Sky, Environment, Float, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { GameState, Enemy, Tower, Projectile, Effect, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType, StageId, Boss, BossAbilityType } from './types';
-import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL, STAGE_CONFIGS, getWaveDefinition } from './constants';
+import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL, STAGE_CONFIGS, getWaveDefinition, INITIAL_STAGE_PROGRESS } from './constants';
 import HUD from './components/HUD';
 import Scene from './components/Scene';
+import { saveGame, loadGame, clearSave, hasSaveData } from './saveSystem';
 
 const TICK_RATE = 50; 
 
@@ -29,13 +30,7 @@ const App: React.FC = () => {
     isChoosingAugment: false,
     targetingAbility: null,
     currentStage: StageId.STAGE_1,
-    stageProgress: {
-        [StageId.STAGE_1]: { unlocked: true, completed: false, bestWave: 0, stars: 0 },
-        [StageId.STAGE_2]: { unlocked: false, completed: false, bestWave: 0, stars: 0 },
-        [StageId.STAGE_3]: { unlocked: false, completed: false, bestWave: 0, stars: 0 },
-        [StageId.STAGE_4]: { unlocked: false, completed: false, bestWave: 0, stars: 0 },
-        [StageId.STAGE_5]: { unlocked: false, completed: false, bestWave: 0, stars: 0 },
-    },
+    stageProgress: INITIAL_STAGE_PROGRESS,
     activeBoss: null,
     bossAnnouncement: null,
     gamePhase: 'MENU',
@@ -51,12 +46,18 @@ const App: React.FC = () => {
 
   const [selectedTowerType, setSelectedTowerType] = useState<TowerType>(TowerType.BASIC);
   const [pendingPlacement, setPendingPlacement] = useState<Vector3Tuple | null>(null);
+  const [canContinue, setCanContinue] = useState(false);
   
   const gameStateRef = useRef(gameState);
 
   useEffect(() => {
     gameStateRef.current = gameState;
   }, [gameState]);
+
+  // Initial Save Check
+  useEffect(() => {
+    setCanContinue(hasSaveData());
+  }, []);
 
   // Boss Announcement Clearer
   useEffect(() => {
@@ -148,6 +149,11 @@ const App: React.FC = () => {
                     const nextStageId = stages[currentIdx + 1] as StageId;
                     nextStageProgress[nextStageId] = { ...nextStageProgress[nextStageId], unlocked: true };
                 }
+
+                // SAVE GAME ON COMPLETION
+                saveGame(nextStageProgress);
+                // Also update canContinue state immediately if we were to return to menu, but this is inside setState, so side effects are tricky.
+                // We will rely on loading logic when returning to menu.
             }
 
             return {
@@ -527,6 +533,13 @@ const App: React.FC = () => {
         if (nextLives <= 0) {
             nextGameOver = true;
             nextPhase = 'GAME_OVER';
+            // Save on Game Over to preserve bestWave progress if any (e.g. infinite mode later, or just tracking)
+            const currentProg = nextStageProgress[prev.currentStage];
+            nextStageProgress[prev.currentStage] = {
+                ...currentProg,
+                bestWave: Math.max(currentProg.bestWave, prev.wave)
+            };
+            saveGame(nextStageProgress);
         }
 
         return {
@@ -947,8 +960,36 @@ const App: React.FC = () => {
   const setGameSpeed = (speed: number) => setGameState(prev => ({ ...prev, gameSpeed: speed }));
 
   const goToMenu = () => setGameState(prev => ({ ...prev, gamePhase: 'MENU' }));
-  const goToStageSelect = () => setGameState(prev => ({ ...prev, gamePhase: 'STAGE_SELECT' }));
   
+  const handleContinue = () => {
+    const savedProgress = loadGame();
+    if (savedProgress) {
+        setGameState(prev => ({
+            ...prev,
+            stageProgress: savedProgress,
+            gamePhase: 'STAGE_SELECT'
+        }));
+    } else {
+        // Fallback if save corrupted or missing
+        setCanContinue(false);
+    }
+  };
+
+  const handleNewGame = () => {
+    clearSave();
+    setCanContinue(false);
+    setGameState(prev => ({
+        ...prev,
+        stageProgress: INITIAL_STAGE_PROGRESS,
+        gamePhase: 'STAGE_SELECT'
+    }));
+  };
+  
+  const goToStageSelect = () => {
+      // Just switch phase, keeping current progress (useful if returning from failure)
+      setGameState(prev => ({ ...prev, gamePhase: 'STAGE_SELECT' }));
+  };
+
   const startStage = (stageId: StageId) => {
     const config = STAGE_CONFIGS[stageId];
     setGameState(prev => ({
@@ -1011,6 +1052,9 @@ const App: React.FC = () => {
         onGoToMenu={goToMenu}
         onGoToStageSelect={goToStageSelect}
         onStartStage={startStage}
+        canContinue={canContinue}
+        onContinue={handleContinue}
+        onNewGame={handleNewGame}
       />
     </div>
   );
