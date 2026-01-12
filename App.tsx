@@ -81,7 +81,7 @@ const App: React.FC = () => {
         
         const tickDelta = TICK_RATE * prev.gameSpeed;
         const currentStageConfig = STAGE_CONFIGS[prev.currentStage];
-        const activePath = currentStageConfig.path;
+        const allPaths = currentStageConfig.paths;
 
         let nextEnemies = [...prev.enemies];
         const nextProjectiles = [...prev.projectiles];
@@ -152,8 +152,6 @@ const App: React.FC = () => {
 
                 // SAVE GAME ON COMPLETION
                 saveGame(nextStageProgress);
-                // Also update canContinue state immediately if we were to return to menu, but this is inside setState, so side effects are tricky.
-                // We will rely on loading logic when returning to menu.
             }
 
             return {
@@ -173,11 +171,14 @@ const App: React.FC = () => {
             t.damage = t.baseDamage;
             t.fireRate = t.baseFireRate;
             t.range = t.baseRange;
+            if (t.disabledTimer && t.disabledTimer > 0) {
+                t.disabledTimer -= tickDelta;
+            }
         });
 
         // Apply Passive Auras
         nextTowers.forEach(source => {
-            if (source.passiveType !== PassiveType.NONE) {
+            if (source.passiveType !== PassiveType.NONE && (source.disabledTimer || 0) <= 0) {
                 // @ts-ignore
                 const config = ABILITY_CONFIG[source.passiveType];
                 if (!config) return;
@@ -199,7 +200,7 @@ const App: React.FC = () => {
         nextTowers.forEach(t => {
             if (t.abilityCooldown > 0) t.abilityCooldown = Math.max(0, t.abilityCooldown - tickDelta);
             if (t.abilityDuration > 0) t.abilityDuration = Math.max(0, t.abilityDuration - tickDelta);
-            if (t.abilityDuration > 0 && t.activeType === ActiveAbilityType.OVERCLOCK) {
+            if (t.abilityDuration > 0 && t.activeType === ActiveAbilityType.OVERCLOCK && (t.disabledTimer || 0) <= 0) {
                 const config = ABILITY_CONFIG[ActiveAbilityType.OVERCLOCK];
                 t.fireRate *= config.multiplier;
             }
@@ -227,11 +228,38 @@ const App: React.FC = () => {
           const enemy = nextEnemies[i];
           let speedMultiplier = 1;
           
-          // Apply Boss Speed Multiplier from Phase
+          // Apply Boss Buffs
           if (enemy.isBoss && enemy.bossConfig) {
+             const boss = enemy as Boss;
              const phase = enemy.bossConfig.phases[enemy.currentPhase || 0];
              speedMultiplier *= phase.speedMultiplier;
-             if ((enemy as Boss).isShielded) speedMultiplier *= 0.5;
+             if (boss.isShielded) speedMultiplier *= 0.5;
+             
+             // Check for active speed buffs
+             if (boss.activeBuffs) {
+                 const speedBuff = boss.activeBuffs.find(b => b.type === 'SPEED');
+                 if (speedBuff) speedMultiplier *= speedBuff.value;
+                 
+                 // Expire buffs
+                 boss.activeBuffs.forEach(b => b.duration -= tickDelta);
+                 boss.activeBuffs = boss.activeBuffs.filter(b => b.duration > 0);
+             }
+             
+             // Regen Logic
+             if (boss.activeBuffs) {
+                 const regenBuff = boss.activeBuffs.find(b => b.type === 'REGEN');
+                 if (regenBuff) {
+                     // value is fraction of max health per second (e.g. 0.05)
+                     const healAmount = boss.maxHealth * regenBuff.value * (tickDelta / 1000);
+                     boss.health = Math.min(boss.maxHealth, boss.health + healAmount);
+                     if (Math.random() < 0.1) {
+                        nextEffects.push({
+                             id: Math.random().toString(), type: 'SPARK', position: { ...boss.position, y: 2 },
+                             color: '#22c55e', scale: 0.5, lifetime: 10, maxLifetime: 10
+                        });
+                     }
+                 }
+             }
           }
 
           if (enemy.freezeTimer && enemy.freezeTimer > 0) {
@@ -239,7 +267,7 @@ const App: React.FC = () => {
               speedMultiplier = 0;
           } else {
              nextTowers.forEach(t => {
-                 if (t.passiveType === PassiveType.SLOW_AURA) {
+                 if (t.passiveType === PassiveType.SLOW_AURA && (t.disabledTimer || 0) <= 0) {
                      const dist = Math.sqrt(Math.pow(t.position.x - enemy.position.x, 2) + Math.pow(t.position.z - enemy.position.z, 2));
                      const config = ABILITY_CONFIG[PassiveType.SLOW_AURA];
                      if (dist <= config.range) speedMultiplier = Math.min(speedMultiplier, config.slowFactor);
@@ -248,8 +276,9 @@ const App: React.FC = () => {
           }
           if (speedMultiplier === 0) continue;
           
-          const currentWaypoint = activePath[enemy.pathIndex];
-          const nextWaypoint = activePath[enemy.pathIndex + 1];
+          const activePath = allPaths[enemy.pathId || 0];
+          const currentWaypoint = activePath[enemy.waypointIndex];
+          const nextWaypoint = activePath[enemy.waypointIndex + 1];
           
           if (!nextWaypoint) {
             nextLives -= 1;
@@ -261,7 +290,7 @@ const App: React.FC = () => {
           const dist = Math.sqrt(dx * dx + dz * dz);
           enemy.progress += (enemy.speed * speedMultiplier * 0.05 * prev.gameSpeed) / dist;
           if (enemy.progress >= 1) {
-            enemy.pathIndex += 1;
+            enemy.waypointIndex += 1;
             enemy.progress = 0;
           }
           enemy.position = { x: currentWaypoint.x + dx * enemy.progress, y: enemy.position.y, z: currentWaypoint.z + dz * enemy.progress };
@@ -271,6 +300,10 @@ const App: React.FC = () => {
         const now = Date.now();
         nextTowers.forEach(tower => {
           tower.cooldown -= tickDelta;
+          
+          // Check for Disable Status
+          if (tower.disabledTimer && tower.disabledTimer > 0) return;
+
           if (tower.cooldown > 0) return;
           let candidates = nextEnemies.filter(enemy => {
              const dist = Math.sqrt(Math.pow(enemy.position.x - tower.position.x, 2) + Math.pow(enemy.position.z - tower.position.z, 2));
@@ -279,7 +312,7 @@ const App: React.FC = () => {
           });
           if (candidates.length > 0) {
               if (tower.targetPriority === TargetPriority.FIRST) {
-                  candidates.sort((a, b) => a.pathIndex !== b.pathIndex ? b.pathIndex - a.pathIndex : b.progress - a.progress);
+                  candidates.sort((a, b) => a.waypointIndex !== b.waypointIndex ? b.waypointIndex - a.waypointIndex : b.progress - a.progress);
               } else if (tower.targetPriority === TargetPriority.STRONGEST) {
                   candidates.sort((a, b) => b.health - a.health);
               } else if (tower.targetPriority === TargetPriority.WEAKEST) {
@@ -450,18 +483,20 @@ const App: React.FC = () => {
                             id: Math.random().toString(), type: spawn.enemyType,
                             health: stats.health * 1.2, maxHealth: stats.health * 1.2,
                             speed: stats.speed, position: spawnPos,
-                            pathIndex: updatedBoss.pathIndex, progress: updatedBoss.progress
+                            pathId: updatedBoss.pathId, waypointIndex: updatedBoss.waypointIndex, progress: updatedBoss.progress
                          });
                     }
                 }
             });
 
+            // Cooldowns
             Object.keys(updatedBoss.abilityCooldowns).forEach(key => {
                 if (updatedBoss.abilityCooldowns[key] > 0) {
                     updatedBoss.abilityCooldowns[key] -= tickDelta;
                 }
             });
 
+            // Shield Logic
             if (updatedBoss.isShielded) {
                 if ((updatedBoss.shieldTimer || 0) > 0) {
                     updatedBoss.shieldTimer = (updatedBoss.shieldTimer || 0) - tickDelta;
@@ -470,6 +505,23 @@ const App: React.FC = () => {
                     nextEffects.push({
                          id: Math.random().toString(), type: 'NOVA', position: updatedBoss.position,
                          color: '#3b82f6', scale: 2, lifetime: 20, maxLifetime: 20
+                    });
+                }
+            }
+
+            // Disable Zone Logic (Expiration)
+            if (updatedBoss.disabledZone) {
+                updatedBoss.disabledZone.duration -= tickDelta;
+                if (updatedBoss.disabledZone.duration <= 0) {
+                    updatedBoss.disabledZone = undefined;
+                } else {
+                    // Apply disable to towers
+                    const zone = updatedBoss.disabledZone;
+                    nextTowers.forEach(t => {
+                        const dist = Math.sqrt(Math.pow(t.position.x - zone.position.x, 2) + Math.pow(t.position.z - zone.position.z, 2));
+                        if (dist <= zone.radius) {
+                            t.disabledTimer = 500; // Keep disabling while active
+                        }
                     });
                 }
             }
@@ -502,13 +554,30 @@ const App: React.FC = () => {
                                id: Math.random().toString(), type: EnemyType.BASIC,
                                health: stats.health, maxHealth: stats.health,
                                speed: stats.speed, position: { x: updatedBoss.position.x + offsetX, y: updatedBoss.position.y, z: updatedBoss.position.z + offsetZ },
-                               pathIndex: updatedBoss.pathIndex, progress: updatedBoss.progress
+                               pathId: updatedBoss.pathId, waypointIndex: updatedBoss.waypointIndex, progress: updatedBoss.progress
                             });
                        }
                      } else if (ability.type === BossAbilityType.SHIELD_PULSE) {
                          updatedBoss.isShielded = true;
                          updatedBoss.shieldTimer = ability.duration || 3000;
                          nextBossAnnouncement = "EMERGENCY SHIELDS ACTIVE";
+                     } else if (ability.type === BossAbilityType.SPEED_BURST) {
+                         updatedBoss.activeBuffs = updatedBoss.activeBuffs || [];
+                         updatedBoss.activeBuffs.push({ type: 'SPEED', duration: ability.duration || 3000, value: ability.value || 2 });
+                         nextBossAnnouncement = "SPEED SURGE DETECTED";
+                         nextEffects.push({
+                             id: Math.random().toString(), type: 'SPARK', position: updatedBoss.position, color: '#06b6d4', scale: 2, lifetime: 30, maxLifetime: 30
+                         });
+                     } else if (ability.type === BossAbilityType.REGEN) {
+                         updatedBoss.activeBuffs = updatedBoss.activeBuffs || [];
+                         updatedBoss.activeBuffs.push({ type: 'REGEN', duration: ability.duration || 5000, value: ability.value || 0.05 });
+                         nextBossAnnouncement = "SELF-REPAIR INITIATED";
+                     } else if (ability.type === BossAbilityType.DISABLE_ZONE) {
+                         updatedBoss.disabledZone = { position: { ...updatedBoss.position }, radius: ability.radius || 4, duration: ability.duration || 5000 };
+                         nextBossAnnouncement = "EMP DISCHARGE";
+                         nextEffects.push({
+                             id: Math.random().toString(), type: 'DISABLE_FIELD', position: updatedBoss.position, color: '#dc2626', scale: (ability.radius || 4) * 2, lifetime: (ability.duration || 5000) / (tickDelta * 2) * 60 /* Approx frames */, maxLifetime: (ability.duration || 5000) / (tickDelta * 2) * 60
+                         });
                      }
                  }
             });
@@ -562,7 +631,7 @@ const App: React.FC = () => {
     const nextWaveNum = gameState.wave + 1;
     const stageConfig = STAGE_CONFIGS[gameState.currentStage];
 
-    // Check for Final Boss Wave (Wave 26 in this configuration)
+    // Check for Final Boss Wave
     if (nextWaveNum === stageConfig.waves) {
         triggerBossIntro();
         return;
@@ -609,7 +678,14 @@ const App: React.FC = () => {
                 
                 setGameState(prev => {
                     const stats = ENEMY_STATS[type];
-                    const startPos = stageConfig.path[0];
+                    
+                    // Path Selection Logic
+                    let pathId = 0;
+                    if (stageConfig.paths.length > 1) {
+                         pathId = Math.floor(Math.random() * stageConfig.paths.length);
+                    }
+                    
+                    const startPos = stageConfig.paths[pathId][0];
                     const scaledHealth = stats.health * (1 + (waveNum * 0.1)) * stageConfig.enemyScaling;
                     
                     const newEnemy: Enemy = {
@@ -619,7 +695,8 @@ const App: React.FC = () => {
                         maxHealth: scaledHealth, 
                         speed: stats.speed, 
                         position: { ...startPos },
-                        pathIndex: 0, 
+                        pathId: pathId,
+                        waypointIndex: 0, 
                         progress: 0
                     };
                     return { ...prev, enemies: [...prev.enemies, newEnemy] };
@@ -644,16 +721,19 @@ const App: React.FC = () => {
           bossAnnouncement: config.name,
           wave: prev.wave + 1,
           selectedTowerId: null,
-          targetingAbility: null
+          targetingAbility: null,
+          gameSpeed: 0 // Pause speed during intro
       }));
       setPendingPlacement(null);
       
-      setTimeout(() => startBossFight(), 3000);
+      setTimeout(() => startBossFight(), 4000); // Increased to 4s for drama
   };
 
   const startBossFight = () => {
       const config = STAGE_CONFIGS[gameStateRef.current.currentStage].bossConfig;
-      const startPos = STAGE_CONFIGS[gameStateRef.current.currentStage].path[0];
+      const paths = STAGE_CONFIGS[gameStateRef.current.currentStage].paths;
+      const pathId = 0; // Boss always takes primary path for now
+      const startPos = paths[pathId][0];
       
       const boss: Boss = {
           id: 'BOSS_PRIME',
@@ -662,7 +742,8 @@ const App: React.FC = () => {
           maxHealth: config.baseHealth,
           speed: config.speed,
           position: { ...startPos },
-          pathIndex: 0,
+          pathId: pathId,
+          waypointIndex: 0,
           progress: 0,
           isBoss: true,
           bossConfig: config,
@@ -679,6 +760,7 @@ const App: React.FC = () => {
           enemies: [boss],
           activeBoss: boss,
           waveStatus: 'CLEARING',
+          gameSpeed: 1, // Resume speed
           waveIntel: `WARNING: ${config.title} detected!`
       }));
   };
@@ -711,6 +793,7 @@ const App: React.FC = () => {
             if (towerIndex === -1) return;
             const tower = nextTowers[towerIndex];
             if (tower.abilityCooldown > 0) return;
+            if (tower.disabledTimer && tower.disabledTimer > 0) return; // Cannot use ability if disabled
 
             const config = ABILITY_CONFIG[tower.activeType];
             // @ts-ignore
@@ -758,7 +841,7 @@ const App: React.FC = () => {
           let nextGold = prev.gold;
           let nextStats = { ...prev.stats };
           
-          const availableTowers = nextTowers.filter(t => t.activeType === type && t.abilityCooldown <= 0);
+          const availableTowers = nextTowers.filter(t => t.activeType === type && t.abilityCooldown <= 0 && (!t.disabledTimer || t.disabledTimer <= 0));
           if (availableTowers.length === 0) return prev;
 
           const config = ABILITY_CONFIG[type];
@@ -814,7 +897,7 @@ const App: React.FC = () => {
       }
 
       const towersToTrigger = currentGameState.towers.filter(t => {
-          if (t.activeType !== activeType || t.abilityCooldown > 0) return false;
+          if (t.activeType !== activeType || t.abilityCooldown > 0 || (t.disabledTimer && t.disabledTimer > 0)) return false;
           return currentGameState.enemies.some(enemy => {
               const dist = Math.sqrt(Math.pow(enemy.position.x - t.position.x, 2) + Math.pow(enemy.position.z - t.position.z, 2));
               return dist <= t.range;
@@ -836,6 +919,13 @@ const App: React.FC = () => {
              setPendingPlacement(null);
              setGameState(prev => ({ ...prev, selectedTowerId: null, targetingAbility: null }));
         }
+        if (e.code === 'Space') {
+            const currentPhase = gameStateRef.current.gamePhase;
+            const currentStatus = gameStateRef.current.waveStatus;
+            if (currentPhase === 'PLAYING' && currentStatus === 'IDLE') {
+                startNextWave();
+            }
+        }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -855,15 +945,24 @@ const App: React.FC = () => {
       if (exists) return;
       
       const currentStageConfig = STAGE_CONFIGS[gameState.currentStage];
-      const activePath = currentStageConfig.path;
+      const allPaths = currentStageConfig.paths;
       
-      const onPath = activePath.some((wp, idx) => {
-        if (idx === activePath.length - 1) return false;
-        const next = activePath[idx + 1];
-        const minX = Math.min(wp.x, next.x) - 0.8; const maxX = Math.max(wp.x, next.x) + 0.8;
-        const minZ = Math.min(wp.z, next.z) - 0.8; const maxZ = Math.max(wp.z, next.z) + 0.8;
-        return pos.x >= minX && pos.x <= maxX && pos.z >= minZ && pos.z <= maxZ;
-      });
+      // Check collision against ALL paths
+      let onPath = false;
+      for (const path of allPaths) {
+          const pathCollision = path.some((wp, idx) => {
+            if (idx === path.length - 1) return false;
+            const next = path[idx + 1];
+            const minX = Math.min(wp.x, next.x) - 0.8; const maxX = Math.max(wp.x, next.x) + 0.8;
+            const minZ = Math.min(wp.z, next.z) - 0.8; const maxZ = Math.max(wp.z, next.z) + 0.8;
+            return pos.x >= minX && pos.x <= maxX && pos.z >= minZ && pos.z <= maxZ;
+          });
+          if (pathCollision) {
+              onPath = true;
+              break;
+          }
+      }
+      
       if (onPath) return;
       
       setPendingPlacement(pos);
@@ -1028,6 +1127,8 @@ const App: React.FC = () => {
 
   const resetGame = () => startStage(gameState.currentStage);
 
+  const currentStageConfig = STAGE_CONFIGS[gameState.currentStage];
+
   return (
     <div className="w-full h-full bg-slate-900 text-white font-sans overflow-hidden">
       <Canvas shadows camera={{ position: [10, 15, 10], fov: 45 }}>
@@ -1037,7 +1138,8 @@ const App: React.FC = () => {
             onSelectTower={handleSelectTower} 
             selectedTowerType={selectedTowerType} 
             pendingPlacement={pendingPlacement}
-            path={STAGE_CONFIGS[gameState.currentStage].path} 
+            paths={currentStageConfig.paths}
+            environment={currentStageConfig.environment}
         />
         <OrbitControls makeDefault maxPolarAngle={Math.PI / 2.2} minDistance={5} maxDistance={30} enabled={gameState.gamePhase === 'PLAYING' || gameState.gamePhase === 'BOSS_FIGHT' || gameState.gamePhase === 'BOSS_DEATH'} />
       </Canvas>
@@ -1055,6 +1157,7 @@ const App: React.FC = () => {
         canContinue={canContinue}
         onContinue={handleContinue}
         onNewGame={handleNewGame}
+        totalWaves={currentStageConfig.waves}
       />
     </div>
   );

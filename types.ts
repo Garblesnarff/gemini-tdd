@@ -19,7 +19,8 @@ export interface Enemy {
   maxHealth: number;
   speed: number;
   position: Vector3Tuple;
-  pathIndex: number;
+  pathId: number; // Index of the path in StageConfig.paths
+  waypointIndex: number; // Formerly pathIndex
   progress: number; // 0 to 1 between waypoints
   frozen?: number; // 0 to 1 (slow factor, 0 is stopped, 1 is normal)
   freezeTimer?: number; // Time remaining for full freeze
@@ -107,6 +108,7 @@ export interface Tower {
   abilityMaxCooldown: number;  
   abilityDuration: number;     
   targetPriority: TargetPriority;
+  disabledTimer?: number; // For boss disable zones
 }
 
 export interface Projectile {
@@ -121,7 +123,7 @@ export interface Projectile {
 
 export interface Effect {
   id: string;
-  type: 'EXPLOSION' | 'SPARK' | 'TEXT' | 'NOVA' | 'FREEZE_WAVE' | 'ORBITAL_STRIKE' | 'PORTAL' | 'BLOCKED';
+  type: 'EXPLOSION' | 'SPARK' | 'TEXT' | 'NOVA' | 'FREEZE_WAVE' | 'ORBITAL_STRIKE' | 'PORTAL' | 'BLOCKED' | 'DISABLE_FIELD';
   position: Vector3Tuple;
   color: string;
   scale: number;
@@ -143,11 +145,13 @@ export enum StageId {
 export type GamePhase = 'MENU' | 'STAGE_SELECT' | 'PLAYING' | 'BOSS_INTRO' | 'BOSS_FIGHT' | 'BOSS_DEATH' | 'STAGE_COMPLETE' | 'GAME_OVER';
 
 export interface StageEnvironment {
-  skyPreset: string;
+  skyPreset: string; // 'night' | 'sunset' | 'city' | 'park' | 'forest'
   gridColor: string;
   pathColor: string;
   fogColor?: string;
+  fogDensity?: number;
   ambientIntensity: number;
+  particleType?: 'none' | 'snow' | 'embers' | 'rain' | 'void_particles' | 'dust';
 }
 
 export interface StageConfig {
@@ -155,7 +159,7 @@ export interface StageConfig {
   name: string;
   description: string;
   waves: number;
-  path: Vector3Tuple[];
+  paths: Vector3Tuple[][]; // Supports multiple paths
   startingGold: number;
   startingLives: number;
   enemyScaling: number;
@@ -183,7 +187,7 @@ export interface BossPhase {
   speedMultiplier: number;
   damageResistance: number;
   announcement: string;
-  visualChange: 'enraged' | 'shielded' | 'unstable';
+  visualChange: 'enraged' | 'shielded' | 'unstable' | 'charged';
   abilityUnlock?: string;
 }
 
@@ -226,6 +230,7 @@ export interface Boss extends Enemy {
   shieldTimer?: number;
   triggeredSpawnIndices: number[];
   disabledZone?: { position: Vector3Tuple; radius: number; duration: number };
+  activeBuffs?: { type: 'SPEED' | 'REGEN'; duration: number; value: number }[];
 }
 
 export interface WaveGroup {

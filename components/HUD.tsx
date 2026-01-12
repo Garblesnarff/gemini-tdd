@@ -27,6 +27,7 @@ interface HUDProps {
   canContinue: boolean;
   onContinue: () => void;
   onNewGame: () => void;
+  totalWaves: number;
 }
 
 interface AbilityStat {
@@ -250,7 +251,8 @@ const HUD: React.FC<HUDProps> = ({
   onStartStage,
   canContinue,
   onContinue,
-  onNewGame
+  onNewGame,
+  totalWaves
 }) => {
   const selectedTower = gameState.selectedTowerId 
     ? gameState.towers.find(t => t.id === gameState.selectedTowerId) 
@@ -260,7 +262,7 @@ const HUD: React.FC<HUDProps> = ({
   const isPlaying = gameState.gamePhase === 'PLAYING' || gameState.gamePhase === 'BOSS_FIGHT' || gameState.gamePhase === 'BOSS_DEATH';
 
   return (
-    <div className="fixed inset-0 pointer-events-none p-4 md:p-6 select-none font-sans">
+    <div className="fixed inset-0 pointer-events-none p-4 md:p-6 select-none font-sans z-10">
       
       {/* --- MENU OVERLAY --- */}
       {gameState.gamePhase === 'MENU' && (
@@ -304,9 +306,9 @@ const HUD: React.FC<HUDProps> = ({
                                 disabled={!isUnlocked}
                                 onClick={() => onStartStage(stage.id)}
                                 className={`
-                                    group relative p-6 rounded-2xl border-2 text-left transition-all overflow-hidden
+                                    group relative p-6 rounded-2xl border-2 text-left transition-all overflow-hidden flex flex-col
                                     ${isUnlocked 
-                                        ? 'bg-slate-800 border-slate-700 hover:border-blue-500 hover:bg-slate-700' 
+                                        ? 'bg-slate-800 border-slate-700 hover:border-blue-500 hover:bg-slate-750 hover:-translate-y-1 shadow-lg' 
                                         : 'bg-slate-950 border-slate-900 opacity-50 cursor-not-allowed'}
                                 `}
                             >
@@ -323,12 +325,24 @@ const HUD: React.FC<HUDProps> = ({
                                     )}
                                 </div>
                                 
-                                <h3 className="text-2xl font-black text-white mb-1">{stage.name}</h3>
-                                <p className="text-sm text-slate-400 mb-6 min-h-[40px]">{stage.description}</p>
+                                <div className="mb-auto">
+                                    <h3 className="text-2xl font-black text-white mb-1">{stage.name}</h3>
+                                    <p className="text-sm text-slate-400 mb-4 min-h-[40px] leading-snug">{stage.description}</p>
+                                </div>
                                 
-                                <div className="flex items-center justify-between border-t border-slate-700/50 pt-4 mt-auto">
-                                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{stage.waves} WAVES</span>
-                                    {isUnlocked && <span className="text-blue-400 font-bold text-sm group-hover:translate-x-1 transition-transform flex items-center gap-1">DEPLOY <ChevronRight size={14} /></span>}
+                                <div className="bg-slate-900/50 -mx-6 -mb-6 p-4 mt-4 border-t border-slate-700/50">
+                                    <div className="flex items-center justify-between mb-2">
+                                         <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">BOSS THREAT</span>
+                                         <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest">{stage.bossConfig.name}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1"><Swords size={12}/> {stage.waves} WAVES</span>
+                                        {isUnlocked ? (
+                                            <span className="text-blue-400 font-bold text-sm group-hover:translate-x-1 transition-transform flex items-center gap-1">DEPLOY <ChevronRight size={14} /></span>
+                                        ) : (
+                                            <span className="text-slate-600 font-bold text-xs uppercase"><Lock size={12} className="inline mr-1"/> LOCKED</span>
+                                        )}
+                                    </div>
                                 </div>
                             </button>
                         );
@@ -340,14 +354,25 @@ const HUD: React.FC<HUDProps> = ({
 
       {/* --- BOSS INTRO OVERLAY --- */}
       {gameState.gamePhase === 'BOSS_INTRO' && (
-          <div className="absolute inset-0 z-40 bg-red-950/20 backdrop-blur-sm flex items-center justify-center">
-              <div className="w-full bg-red-600/90 text-white py-12 flex flex-col items-center justify-center transform animate-in slide-in-from-right duration-500 shadow-[0_0_100px_rgba(220,38,38,0.5)]">
-                  <div className="flex items-center gap-4 text-4xl md:text-6xl font-black italic uppercase tracking-tighter mb-2">
-                      <Bomb size={48} className="animate-bounce" />
+          <div className="absolute inset-0 z-50 bg-black flex items-center justify-center animate-in fade-in duration-1000">
+              <div className="absolute inset-0 bg-red-900/20 radial-gradient" />
+              <div className="relative flex flex-col items-center justify-center text-center p-12 w-full">
+                  <div className="text-9xl text-red-600/10 font-black absolute scale-150 blur-sm uppercase tracking-tighter select-none">{gameState.bossAnnouncement}</div>
+                  
+                  <div className="flex items-center gap-6 text-5xl md:text-7xl font-black italic uppercase tracking-tighter mb-6 text-white drop-shadow-[0_0_25px_rgba(220,38,38,0.8)] animate-in slide-in-from-bottom-10 duration-700">
+                      <Bomb size={64} className="text-red-500 animate-pulse" />
                       WARNING
-                      <Bomb size={48} className="animate-bounce" />
+                      <Bomb size={64} className="text-red-500 animate-pulse" />
                   </div>
-                  <div className="text-2xl md:text-4xl font-bold uppercase tracking-widest opacity-90">{gameState.bossAnnouncement}</div>
+                  
+                  <div className="h-px w-64 bg-red-500/50 mb-6" />
+
+                  <div className="text-3xl md:text-5xl font-bold uppercase tracking-[0.2em] text-red-500 animate-in zoom-in duration-500 delay-300">
+                      {gameState.bossAnnouncement}
+                  </div>
+                  <div className="text-slate-400 mt-4 font-mono tracking-widest text-sm animate-in fade-in duration-1000 delay-500">
+                      THREAT LEVEL: EXTREME
+                  </div>
               </div>
           </div>
       )}
@@ -494,7 +519,7 @@ const HUD: React.FC<HUDProps> = ({
                             <Cpu size={32} className="animate-pulse" />
                             <h2 className="text-4xl font-black uppercase tracking-[0.2em]">System Patch Detected</h2>
                         </div>
-                        <p className="text-slate-400 font-mono text-sm">Select an optimization protocol to integrate into current systems.</p>
+                        <p className="text-slate-400 font-mono text-sm">Wave {gameState.wave} Complete. Select an optimization protocol.</p>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
@@ -545,7 +570,7 @@ const HUD: React.FC<HUDProps> = ({
                     <Swords className="text-blue-400" size={20} />
                     <div className="flex flex-col leading-none">
                         <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Wave</span>
-                        <span className="text-2xl font-black text-white">{gameState.wave}</span>
+                        <span className="text-2xl font-black text-white">{gameState.wave} <span className="text-slate-500 text-lg">/ {totalWaves}</span></span>
                     </div>
                 </div>
                 
@@ -672,7 +697,12 @@ const HUD: React.FC<HUDProps> = ({
             </div>
 
             {/* Bottom Right: Action Button */}
-            <div className="absolute bottom-4 right-4 md:bottom-6 md:right-6 pointer-events-auto">
+            <div className="absolute bottom-4 right-4 md:bottom-6 md:right-6 pointer-events-auto flex flex-col gap-2 items-end">
+                {gameState.wave > totalWaves - 2 && gameState.wave < totalWaves && gameState.waveStatus === 'IDLE' && (
+                    <div className="bg-red-900/80 text-white px-3 py-1 rounded text-[10px] font-bold uppercase tracking-wider animate-pulse border border-red-500">
+                        Boss Incoming
+                    </div>
+                )}
                 <button 
                     onClick={onStartWave}
                     disabled={gameState.waveStatus !== 'IDLE' || gameState.isChoosingAugment}

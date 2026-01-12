@@ -3,24 +3,51 @@ import { TowerType, EnemyType, TechPath, PassiveType, ActiveAbilityType, Augment
 
 export const GRID_SIZE = 12;
 
-// DEPRECATED - Use STAGE_CONFIGS[currentStage].path instead
-export const PATH_WAYPOINTS = [
-  { x: -5, y: 0.2, z: -5 },
-  { x: 5, y: 0.2, z: -5 },
-  { x: 5, y: 0.2, z: 0 },
-  { x: -5, y: 0.2, z: 0 },
-  { x: -5, y: 0.2, z: 5 },
-  { x: 5, y: 0.2, z: 5 },
-];
+// --- PATHS ---
 
 const STAGE_1_PATH: Vector3Tuple[] = [
-  { x: -6, y: 0.2, z: -6 },
-  { x: -6, y: 0.2, z: -2 },
-  { x: 0, y: 0.2, z: -2 },
-  { x: 0, y: 0.2, z: 2 },
-  { x: 6, y: 0.2, z: 2 },
-  { x: 6, y: 0.2, z: 6 }
+  { x: -6, y: 0.2, z: -6 }, { x: -6, y: 0.2, z: -2 },
+  { x: 0, y: 0.2, z: -2 }, { x: 0, y: 0.2, z: 2 },
+  { x: 6, y: 0.2, z: 2 }, { x: 6, y: 0.2, z: 6 }
 ];
+
+const STAGE_2_PATH: Vector3Tuple[] = [
+  { x: -6, y: 0.2, z: -6 }, { x: 6, y: 0.2, z: -6 },
+  { x: 6, y: 0.2, z: -3 }, { x: -6, y: 0.2, z: -3 },
+  { x: -6, y: 0.2, z: 0 }, { x: 6, y: 0.2, z: 0 },
+  { x: 6, y: 0.2, z: 3 }, { x: -6, y: 0.2, z: 3 },
+  { x: -6, y: 0.2, z: 6 }, { x: 6, y: 0.2, z: 6 }
+];
+
+// Crossroads - Path A (Left)
+const STAGE_3_PATH_A: Vector3Tuple[] = [
+    { x: -6, y: 0.2, z: -6 }, { x: -4, y: 0.2, z: -4 },
+    { x: -4, y: 0.2, z: 4 }, { x: 0, y: 0.2, z: 4 },
+    { x: 0, y: 0.2, z: 0 }, { x: 6, y: 0.2, z: 6 }
+];
+// Crossroads - Path B (Right)
+const STAGE_3_PATH_B: Vector3Tuple[] = [
+    { x: -6, y: 0.2, z: -6 }, { x: -4, y: 0.2, z: -4 },
+    { x: 4, y: 0.2, z: -4 }, { x: 4, y: 0.2, z: 0 },
+    { x: 0, y: 0.2, z: 0 }, { x: 6, y: 0.2, z: 6 }
+];
+
+const STAGE_4_PATH: Vector3Tuple[] = [
+    { x: -6, y: 0.2, z: -6 }, { x: 6, y: 0.2, z: -6 },
+    { x: 6, y: 0.2, z: 6 }, { x: -6, y: 0.2, z: 6 },
+    { x: -6, y: 0.2, z: -2 }, { x: 2, y: 0.2, z: -2 },
+    { x: 2, y: 0.2, z: 2 }, { x: 0, y: 0.2, z: 0 }
+];
+
+const STAGE_5_PATH: Vector3Tuple[] = [
+    { x: 0, y: 0.2, z: -7 }, { x: 0, y: 0.2, z: -4 },
+    { x: -5, y: 0.2, z: -4 }, { x: -5, y: 0.2, z: 4 },
+    { x: 5, y: 0.2, z: 4 }, { x: 5, y: 0.2, z: -2 },
+    { x: 0, y: 0.2, z: -2 }, { x: 0, y: 0.2, z: 0 },
+    { x: -2, y: 0.2, z: 2 }, { x: 0, y: 0.2, z: 7 }
+];
+
+// --- BOSS CONFIGS ---
 
 const STAGE_1_BOSS: BossConfig = {
   id: 'sentinel_prime',
@@ -29,7 +56,7 @@ const STAGE_1_BOSS: BossConfig = {
   baseHealth: 5000,
   speed: 0.5,
   size: 2.5,
-  color: '#f97316', // Orange
+  color: '#f97316', 
   phases: [
     { healthThreshold: 1.0, speedMultiplier: 1.0, damageResistance: 0, announcement: "TARGET ACQUIRED: SENTINEL PRIME", visualChange: 'unstable' }, 
     { healthThreshold: 0.75, speedMultiplier: 1.2, damageResistance: 0.1, announcement: "SYSTEMS ACCELERATING", visualChange: 'enraged' },
@@ -46,13 +73,114 @@ const STAGE_1_BOSS: BossConfig = {
   ]
 };
 
+const STAGE_2_BOSS: BossConfig = {
+    id: 'vanguard_alpha',
+    name: 'VANGUARD ALPHA',
+    title: 'Frontline Destroyer',
+    baseHealth: 8000,
+    speed: 0.6,
+    size: 2.8,
+    color: '#991b1b', // Deep Red
+    phases: [
+        { healthThreshold: 1.0, speedMultiplier: 1.0, damageResistance: 0.1, announcement: "VANGUARD ALPHA ENGAGED", visualChange: 'charged' },
+        { healthThreshold: 0.7, speedMultiplier: 1.0, damageResistance: 0.15, announcement: "ENGINES SPOOLING UP", visualChange: 'unstable', abilityUnlock: 'speed_burst' },
+        { healthThreshold: 0.4, speedMultiplier: 1.0, damageResistance: 0.2, announcement: "ARMOR PLATING PURGED", visualChange: 'enraged' },
+        { healthThreshold: 0.2, speedMultiplier: 1.5, damageResistance: 0.05, announcement: "BERSERK PROTOCOL ACTIVE", visualChange: 'unstable' }
+    ],
+    abilities: [
+        { id: 'speed_burst', name: 'Afterburner', type: BossAbilityType.SPEED_BURST, cooldown: 12000, duration: 3000, value: 2.0 },
+        { id: 'spawn_tanks', name: 'Heavy Support', type: BossAbilityType.SPAWN_MINIONS, cooldown: 25000 }
+    ],
+    minionSpawns: [
+        { triggerHealth: 0.4, enemyType: EnemyType.TANK, count: 2, announcement: "Heavy Armor Support Inbound" }
+    ]
+};
+
+const STAGE_3_BOSS: BossConfig = {
+    id: 'swarm_queen',
+    name: 'THE SWARM QUEEN',
+    title: 'Mother of Thousands',
+    baseHealth: 10000,
+    speed: 0.4,
+    size: 3.0,
+    color: '#84cc16', // Lime/Green
+    phases: [
+        { healthThreshold: 1.0, speedMultiplier: 1.0, damageResistance: 0.1, announcement: "THE HIVE AWAKENS", visualChange: 'unstable' },
+        { healthThreshold: 0.75, speedMultiplier: 1.1, damageResistance: 0.1, announcement: "BROOD ACCELERATION", visualChange: 'enraged', abilityUnlock: 'regen' },
+        { healthThreshold: 0.5, speedMultiplier: 1.2, damageResistance: 0.1, announcement: "ELITE GUARD DEPLOYED", visualChange: 'charged' },
+        { healthThreshold: 0.25, speedMultiplier: 1.3, damageResistance: 0.1, announcement: "HIVE MIND CRITICAL", visualChange: 'unstable' }
+    ],
+    abilities: [
+        { id: 'spawn_swarm', name: 'Swarm', type: BossAbilityType.SPAWN_MINIONS, cooldown: 10000 },
+        { id: 'regen', name: 'Biomass Recovery', type: BossAbilityType.REGEN, cooldown: 15000, duration: 5000, value: 0.05 } // 5% heal
+    ],
+    minionSpawns: [
+        { triggerHealth: 0.8, enemyType: EnemyType.BASIC, count: 10, announcement: "Swarm Deployed" },
+        { triggerHealth: 0.5, enemyType: EnemyType.BASIC, count: 15, announcement: "Massive Swarm Detected" },
+        { triggerHealth: 0.25, enemyType: EnemyType.FAST, count: 10, announcement: "Fastlings Inbound" }
+    ]
+};
+
+const STAGE_4_BOSS: BossConfig = {
+    id: 'siege_engine',
+    name: 'SIEGE ENGINE MK-IV',
+    title: 'The Unstoppable',
+    baseHealth: 15000,
+    speed: 0.35,
+    size: 3.5,
+    color: '#475569', // Slate Gray
+    phases: [
+        { healthThreshold: 1.0, speedMultiplier: 1.0, damageResistance: 0.4, announcement: "SIEGE PROTOCOL INITIATED", visualChange: 'shielded' },
+        { healthThreshold: 0.7, speedMultiplier: 1.0, damageResistance: 0.3, announcement: "JAMMING FIELD ACTIVE", visualChange: 'charged', abilityUnlock: 'disable_zone' },
+        { healthThreshold: 0.4, speedMultiplier: 1.2, damageResistance: 0.2, announcement: "ARMOR COMPROMISED", visualChange: 'unstable' },
+        { healthThreshold: 0.15, speedMultiplier: 2.0, damageResistance: 0, announcement: "CORE MELTDOWN IMMINENT", visualChange: 'enraged' }
+    ],
+    abilities: [
+        { id: 'disable_zone', name: 'EMP Field', type: BossAbilityType.DISABLE_ZONE, cooldown: 18000, radius: 4, duration: 6000 },
+        { id: 'spawn_escort', name: 'Escort Detail', type: BossAbilityType.SPAWN_MINIONS, cooldown: 30000 }
+    ],
+    minionSpawns: [
+        { triggerHealth: 0.8, enemyType: EnemyType.TANK, count: 2, announcement: "Escorts Deployed" },
+        { triggerHealth: 0.5, enemyType: EnemyType.TANK, count: 4, announcement: "Defensive Line Formed" }
+    ]
+};
+
+const STAGE_5_BOSS: BossConfig = {
+    id: 'void_harbinger',
+    name: 'VOID HARBINGER',
+    title: 'Herald of the End',
+    baseHealth: 25000,
+    speed: 0.5,
+    size: 4.0,
+    color: '#3b0764', // Deep Purple
+    phases: [
+        { healthThreshold: 1.0, speedMultiplier: 1.0, damageResistance: 0.2, announcement: "REALITY BREACH DETECTED", visualChange: 'unstable', abilityUnlock: 'shield_pulse' },
+        { healthThreshold: 0.75, speedMultiplier: 1.0, damageResistance: 0.2, announcement: "THE VOID EXPANDS", visualChange: 'charged', abilityUnlock: 'spawn_void' },
+        { healthThreshold: 0.5, speedMultiplier: 1.1, damageResistance: 0.2, announcement: "NULLIFICATION FIELD ACTIVE", visualChange: 'shielded', abilityUnlock: 'disable_zone' },
+        { healthThreshold: 0.25, speedMultiplier: 1.5, damageResistance: 0.1, announcement: "ENTROPY UNLEASHED", visualChange: 'enraged', abilityUnlock: 'speed_burst' }
+    ],
+    abilities: [
+        { id: 'shield_pulse', name: 'Void Shield', type: BossAbilityType.SHIELD_PULSE, cooldown: 20000, duration: 4000 },
+        { id: 'disable_zone', name: 'Null Zone', type: BossAbilityType.DISABLE_ZONE, cooldown: 15000, radius: 5, duration: 5000 },
+        { id: 'speed_burst', name: 'Warp Step', type: BossAbilityType.SPEED_BURST, cooldown: 12000, duration: 2000, value: 3.0 },
+        { id: 'spawn_void', name: 'Void Spawn', type: BossAbilityType.SPAWN_MINIONS, cooldown: 25000 }
+    ],
+    minionSpawns: [
+        { triggerHealth: 0.9, enemyType: EnemyType.BASIC, count: 10, announcement: "Voidlings Emerging" },
+        { triggerHealth: 0.6, enemyType: EnemyType.FAST, count: 15, announcement: "Reality Destabilized" },
+        { triggerHealth: 0.3, enemyType: EnemyType.TANK, count: 5, announcement: "Heavy Void Constructs" }
+    ]
+};
+
+// --- STAGE CONFIGS ---
+
 export const STAGE_CONFIGS: Record<StageId, StageConfig> = {
   [StageId.STAGE_1]: {
     id: StageId.STAGE_1,
     name: "Forward Base",
-    description: "The outer perimeter of the Gemini sector. Enemy resistance is expected to be linear but persistent.",
-    waves: 26, // 25 Normal + 1 Boss
-    path: STAGE_1_PATH,
+    description: "The outer perimeter. Enemy resistance is linear but persistent.",
+    waves: 26,
+    paths: [STAGE_1_PATH],
     startingGold: 400,
     startingLives: 20,
     enemyScaling: 1.0,
@@ -61,13 +189,92 @@ export const STAGE_CONFIGS: Record<StageId, StageConfig> = {
       skyPreset: "night",
       gridColor: "#0f172a",
       pathColor: "#334155",
-      ambientIntensity: 0.5
+      fogColor: "#020617",
+      fogDensity: 0.02,
+      ambientIntensity: 0.5,
+      particleType: 'none'
     }
   },
-  [StageId.STAGE_2]: { id: StageId.STAGE_2, name: "Locked", description: "Complete Stage 1 to unlock.", waves: 0, path: [], startingGold: 0, startingLives: 0, enemyScaling: 0, bossConfig: STAGE_1_BOSS, environment: { skyPreset: "sunset", gridColor: "#000", pathColor: "#fff", ambientIntensity: 1 }},
-  [StageId.STAGE_3]: { id: StageId.STAGE_3, name: "Locked", description: "Complete Stage 2 to unlock.", waves: 0, path: [], startingGold: 0, startingLives: 0, enemyScaling: 0, bossConfig: STAGE_1_BOSS, environment: { skyPreset: "sunset", gridColor: "#000", pathColor: "#fff", ambientIntensity: 1 }},
-  [StageId.STAGE_4]: { id: StageId.STAGE_4, name: "Locked", description: "Complete Stage 3 to unlock.", waves: 0, path: [], startingGold: 0, startingLives: 0, enemyScaling: 0, bossConfig: STAGE_1_BOSS, environment: { skyPreset: "sunset", gridColor: "#000", pathColor: "#fff", ambientIntensity: 1 }},
-  [StageId.STAGE_5]: { id: StageId.STAGE_5, name: "Locked", description: "Complete Stage 4 to unlock.", waves: 0, path: [], startingGold: 0, startingLives: 0, enemyScaling: 0, bossConfig: STAGE_1_BOSS, environment: { skyPreset: "sunset", gridColor: "#000", pathColor: "#fff", ambientIntensity: 1 }},
+  [StageId.STAGE_2]: { 
+    id: StageId.STAGE_2, 
+    name: "The Gauntlet", 
+    description: "A zigzag canyon ambush. High speed units expected.", 
+    waves: 28, 
+    paths: [STAGE_2_PATH], 
+    startingGold: 450, 
+    startingLives: 20, 
+    enemyScaling: 1.3, 
+    bossConfig: STAGE_2_BOSS, 
+    environment: { 
+        skyPreset: "sunset", 
+        gridColor: "#450a0a", 
+        pathColor: "#7f1d1d", 
+        fogColor: "#450a0a",
+        fogDensity: 0.03,
+        ambientIntensity: 0.6,
+        particleType: 'embers'
+    }
+  },
+  [StageId.STAGE_3]: { 
+    id: StageId.STAGE_3, 
+    name: "Crossroads", 
+    description: "Enemies split their forces amidst a torrential storm.", 
+    waves: 29, 
+    paths: [STAGE_3_PATH_A, STAGE_3_PATH_B], 
+    startingGold: 500, 
+    startingLives: 18, 
+    enemyScaling: 1.6, 
+    bossConfig: STAGE_3_BOSS, 
+    environment: { 
+        skyPreset: "park", 
+        gridColor: "#1a2e05", 
+        pathColor: "#365314", 
+        fogColor: "#1e1b4b",
+        fogDensity: 0.04,
+        ambientIntensity: 0.3,
+        particleType: 'rain'
+    }
+  },
+  [StageId.STAGE_4]: { 
+    id: StageId.STAGE_4, 
+    name: "The Spiral", 
+    description: "A tightening coil shrouded in dense fog. Visibility is low.", 
+    waves: 29, 
+    paths: [STAGE_4_PATH], 
+    startingGold: 500, 
+    startingLives: 15, 
+    enemyScaling: 2.0, 
+    bossConfig: STAGE_4_BOSS, 
+    environment: { 
+        skyPreset: "forest", 
+        gridColor: "#022c22", 
+        pathColor: "#064e3b", 
+        fogColor: "#064e3b",
+        fogDensity: 0.08, // Heavy fog
+        ambientIntensity: 0.3,
+        particleType: 'dust'
+    }
+  },
+  [StageId.STAGE_5]: { 
+    id: StageId.STAGE_5, 
+    name: "Void Rift", 
+    description: "The source of the incursion. Reality is breaking down.", 
+    waves: 31, 
+    paths: [STAGE_5_PATH], 
+    startingGold: 550, 
+    startingLives: 15, 
+    enemyScaling: 2.5, 
+    bossConfig: STAGE_5_BOSS, 
+    environment: { 
+        skyPreset: "city", 
+        gridColor: "#2e1065", 
+        pathColor: "#581c87", 
+        fogColor: "#000000",
+        fogDensity: 0.05,
+        ambientIntensity: 0.4,
+        particleType: 'void_particles'
+    }
+  },
 };
 
 export const INITIAL_STAGE_PROGRESS: Record<StageId, StageProgress> = {
@@ -84,84 +291,95 @@ export const SELL_REFUND_RATIO = 0.7;
 // --- WAVE DEFINITIONS ---
 
 export const getWaveDefinition = (stageId: StageId, waveNumber: number): WaveDefinition => {
-    // Stage 1 Specific Definitions
+    
+    // Generic generator for higher stages to scale difficulty
+    const generateGenericWave = (wave: number, baseScale: number): WaveDefinition => {
+        const groups: WaveGroup[] = [];
+        const scaleMult = 1 + (baseScale * 0.1); // Slightly harder per stage
+        
+        // Intro Phase (1-5)
+        if (wave <= 5) {
+             groups.push({ type: EnemyType.BASIC, count: Math.floor((5 + wave * 2) * scaleMult), interval: 1000 - (wave * 50) });
+             return { composition: groups, intel: "Initial probing wave." };
+        }
+        // Speed Phase (6-10)
+        if (wave <= 10) {
+             groups.push({ type: EnemyType.BASIC, count: Math.floor(10 * scaleMult), interval: 800 });
+             groups.push({ type: EnemyType.FAST, count: Math.floor((wave - 4) * 2 * scaleMult), interval: 500, wait: 2000 });
+             return { composition: groups, intel: "Fast units detected." };
+        }
+        // Heavy Phase (11-15)
+        if (wave <= 15) {
+             groups.push({ type: EnemyType.BASIC, count: Math.floor(15 * scaleMult), interval: 700 });
+             groups.push({ type: EnemyType.TANK, count: Math.floor((wave - 10) * scaleMult), interval: 2500, wait: 3000 });
+             return { composition: groups, intel: "Heavy armor approaching." };
+        }
+        // Mixed Phase (16-20)
+        if (wave <= 20) {
+            groups.push({ type: EnemyType.FAST, count: Math.floor(15 * scaleMult), interval: 400 });
+            groups.push({ type: EnemyType.TANK, count: Math.floor(3 * scaleMult) + Math.floor((wave-15)/2), interval: 2000, wait: 2000 });
+            return { composition: groups, intel: "Mixed unit composition." };
+        }
+        // Swarm Phase (21+)
+        const lateScale = wave - 20;
+        groups.push({ type: EnemyType.BASIC, count: Math.floor((20 + lateScale * 5) * scaleMult), interval: 400 });
+        groups.push({ type: EnemyType.TANK, count: Math.floor((3 + lateScale) * scaleMult), interval: 1500, wait: 5000 });
+        groups.push({ type: EnemyType.FAST, count: Math.floor((10 + lateScale * 2) * scaleMult), interval: 300, wait: 2000 });
+
+        return { composition: groups, intel: "High intensity wave detected." };
+    };
+
+    // Stage 1 Custom (Tutorial-ish)
     if (stageId === StageId.STAGE_1) {
         const groups: WaveGroup[] = [];
         let intel = "";
-
-        // Waves 1-5: Introduction (Basic)
         if (waveNumber <= 5) {
             const count = waveNumber === 1 ? 5 : waveNumber === 2 ? 7 : waveNumber === 3 ? 8 : waveNumber === 4 ? 10 : 12;
             groups.push({ type: EnemyType.BASIC, count, interval: 1000 - (waveNumber * 50) });
             if (waveNumber === 1) intel = "Small scout group detected. Test your defenses.";
             else if (waveNumber === 5) intel = "Large group of basic units. Augment protocol available after this wave.";
-        }
-        // Waves 6-10: Fast Enemies Introduced
-        else if (waveNumber <= 10) {
-            const basicCount = 8 + (waveNumber - 6); // 8, 9, 10, 11, 12... 
+        } else if (waveNumber <= 10) {
+            const basicCount = 8 + (waveNumber - 6); 
             const fastCount = waveNumber === 6 ? 3 : waveNumber === 7 ? 4 : waveNumber === 8 ? 6 : waveNumber === 9 ? 5 : 8;
             groups.push({ type: EnemyType.BASIC, count: basicCount, interval: 900 });
             groups.push({ type: EnemyType.FAST, count: fastCount, interval: 600, wait: 2000 });
-            
             if (waveNumber === 6) intel = "Fast movers incoming. High fire rate recommended.";
-            else if (waveNumber === 10) intel = "Mixed unit tactics detected. Hold the line for reinforcements.";
-        }
-        // Waves 11-15: Tanks Introduced
-        else if (waveNumber <= 15) {
+        } else if (waveNumber <= 15) {
             const basicCount = waveNumber === 14 ? 15 : 10 + (waveNumber % 2) * 2; 
             const fastCount = waveNumber === 13 ? 10 : 5 + (waveNumber - 10);
             const tankCount = waveNumber === 11 ? 1 : waveNumber === 12 ? 2 : waveNumber === 13 ? 2 : waveNumber === 14 ? 3 : 3;
-            
             groups.push({ type: EnemyType.BASIC, count: basicCount, interval: 800 });
             groups.push({ type: EnemyType.FAST, count: fastCount, interval: 500, wait: 2000 });
             groups.push({ type: EnemyType.TANK, count: tankCount, interval: 3000, wait: 5000 });
-            
             if (waveNumber === 11) intel = "Heavy armor signature confirmed. Tank unit approaching.";
-            else if (waveNumber === 15) intel = "Multiple heavy units detected. Prepare for sustained fire.";
-        }
-        // Waves 16-20: Escalation
-        else if (waveNumber <= 20) {
+        } else if (waveNumber <= 20) {
             groups.push({ type: EnemyType.BASIC, count: 15 + (waveNumber - 15) * 2, interval: 700 });
             groups.push({ type: EnemyType.FAST, count: 5 + (waveNumber - 15), interval: 400, wait: 2000 });
             groups.push({ type: EnemyType.TANK, count: 2 + Math.floor((waveNumber - 15)/2), interval: 2500, wait: 4000 });
-            
-            if (waveNumber === 20) {
-                // Mini-boss wave
-                groups.push({ type: EnemyType.TANK, count: 5, interval: 1500, wait: 10000 });
-                intel = "Armored column detected. High damage output required.";
-            } else {
-                 intel = "Enemy intensity increasing. Check your upgrade paths.";
-            }
-        }
-        // Waves 21-25: Gauntlet
-        else if (waveNumber <= 25) {
-            const scale = waveNumber - 20; // 1 to 5
+        } else if (waveNumber <= 25) {
+            const scale = waveNumber - 20; 
             groups.push({ type: EnemyType.BASIC, count: 20 + scale * 5, interval: 500 });
             groups.push({ type: EnemyType.FAST, count: 10 + scale * 2, interval: 300, wait: 3000 });
             groups.push({ type: EnemyType.TANK, count: scale * 2, interval: 2000, wait: 5000 });
-            
             if (waveNumber === 25) intel = "MASSIVE WAVE DETECTED. Prepare for the Guardian.";
-            else intel = "They are throwing everything at us. Hold fast!";
-        }
-        else {
-             // Fallback
+        } else {
              groups.push({ type: EnemyType.BASIC, count: 5, interval: 1000 });
         }
-        
-        // If no specific intel, pick random
-        if (!intel) {
-            intel = TACTICAL_INTEL_POOL[Math.floor(Math.random() * TACTICAL_INTEL_POOL.length)];
-        }
-
+        if (!intel) intel = TACTICAL_INTEL_POOL[Math.floor(Math.random() * TACTICAL_INTEL_POOL.length)];
         return { composition: groups, intel };
     }
     
-    // Fallback for other stages (random gen for now)
-    const baseCount = 5 + waveNumber * 2;
-    return {
-        composition: [{ type: EnemyType.BASIC, count: baseCount, interval: 800 }],
-        intel: "Standard resistance expected."
+    // Stages 2-5 use generated waves with increasing difficulty multipliers
+    const multipliers = {
+        [StageId.STAGE_2]: 1.2,
+        [StageId.STAGE_3]: 1.5,
+        [StageId.STAGE_4]: 2.0,
+        [StageId.STAGE_5]: 2.5
     };
+    
+    const def = generateGenericWave(waveNumber, multipliers[stageId] || 1);
+    if (!def.intel) def.intel = TACTICAL_INTEL_POOL[Math.floor(Math.random() * TACTICAL_INTEL_POOL.length)];
+    return def;
 };
 
 export const TACTICAL_INTEL_POOL = [
