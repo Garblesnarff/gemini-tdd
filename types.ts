@@ -201,6 +201,23 @@ export interface StageProgress {
   stars: 0 | 1 | 2 | 3;
 }
 
+// --- META PROGRESSION ---
+
+export interface MetaStats {
+  totalEnemiesKilled: number;
+  totalGoldEarned: number;
+  totalBossesDefeated: number;
+  totalPlayTime: number; // milliseconds
+}
+
+export interface MetaProgress {
+  dataCores: number;
+  totalCoresEarned: number;
+  purchasedUpgrades: string[];
+  achievements: Record<string, boolean>; // id -> unlocked
+  stats: MetaStats;
+}
+
 export enum BossAbilityType {
   DISABLE_ZONE = 'DISABLE_ZONE',
   SPAWN_MINIONS = 'SPAWN_MINIONS',
@@ -278,6 +295,8 @@ export interface GameStats {
   totalGoldEarned: number;
   towersBuilt: number;
   abilitiesUsed: number;
+  enemiesKilled: number; // Added for tracking
+  coresEarned?: number; // Ephemeral for results screen
 }
 
 export type DirectorActionType = 'NONE' | 'ELITE' | 'SUPPLY';
@@ -305,6 +324,7 @@ export interface GameState {
   // New Fields
   currentStage: StageId;
   stageProgress: Record<StageId, StageProgress>;
+  metaProgress: MetaProgress; // Added Meta Progress to GameState
   activeBoss: Boss | null;
   bossAnnouncement: string | null;
   gamePhase: GamePhase;

@@ -1,5 +1,5 @@
 
-import { TowerType, EnemyType, TechPath, PassiveType, ActiveAbilityType, Augment, AugmentType, StageId, StageConfig, BossConfig, BossAbilityType, Vector3Tuple, WaveDefinition, WaveGroup, StageProgress } from './types';
+import { TowerType, EnemyType, TechPath, PassiveType, ActiveAbilityType, Augment, AugmentType, StageId, StageConfig, BossConfig, BossAbilityType, Vector3Tuple, WaveDefinition, WaveGroup, StageProgress, MetaProgress } from './types';
 
 export const GRID_SIZE = 12;
 
@@ -283,6 +283,27 @@ export const INITIAL_STAGE_PROGRESS: Record<StageId, StageProgress> = {
   [StageId.STAGE_3]: { unlocked: false, completed: false, bestWave: 0, stars: 0 },
   [StageId.STAGE_4]: { unlocked: false, completed: false, bestWave: 0, stars: 0 },
   [StageId.STAGE_5]: { unlocked: false, completed: false, bestWave: 0, stars: 0 },
+};
+
+export const INITIAL_META_PROGRESS: MetaProgress = {
+  dataCores: 0,
+  totalCoresEarned: 0,
+  purchasedUpgrades: [],
+  achievements: {},
+  stats: {
+    totalEnemiesKilled: 0,
+    totalGoldEarned: 0,
+    totalBossesDefeated: 0,
+    totalPlayTime: 0
+  }
+};
+
+export const STAGE_CORE_REWARDS: Record<StageId, { firstClear: number, replay: number }> = {
+  [StageId.STAGE_1]: { firstClear: 50, replay: 10 },
+  [StageId.STAGE_2]: { firstClear: 75, replay: 15 },
+  [StageId.STAGE_3]: { firstClear: 100, replay: 20 },
+  [StageId.STAGE_4]: { firstClear: 150, replay: 30 },
+  [StageId.STAGE_5]: { firstClear: 250, replay: 50 },
 };
 
 export const MAX_LEVEL = 3;

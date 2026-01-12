@@ -2,7 +2,7 @@
 import React, { useMemo } from 'react';
 import { GameState, TowerType, TechPath, ActiveAbilityType, TargetPriority, Vector3Tuple, Augment, StageId, BossAbilityType } from '../types';
 import { TOWER_STATS, TECH_PATH_INFO, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, STAGE_CONFIGS } from '../constants';
-import { Heart, Coins, Swords, Shield, Zap, Info, ChevronRight, RefreshCcw, Radio, Eye, X, ArrowUpCircle, Check, Play, Pause, FastForward, Trash2, Crosshair, Target, Cpu, Flame, Snowflake, Ghost, Bomb, Lock, Star, Map, Skull, Timer, Medal, AlertCircle, Package } from 'lucide-react';
+import { Heart, Coins, Swords, Shield, Zap, Info, ChevronRight, RefreshCcw, Radio, Eye, X, ArrowUpCircle, Check, Play, Pause, FastForward, Trash2, Crosshair, Target, Cpu, Flame, Snowflake, Ghost, Bomb, Lock, Star, Map, Skull, Timer, Medal, AlertCircle, Package, Database } from 'lucide-react';
 
 interface HUDProps {
   gameState: GameState;
@@ -340,7 +340,15 @@ const HUD: React.FC<HUDProps> = ({
       {gameState.gamePhase === 'STAGE_SELECT' && (
          <div className="absolute inset-0 bg-slate-900/95 flex flex-col items-center justify-center z-50 pointer-events-auto p-10 overflow-y-auto">
              <div className="w-full max-w-6xl">
-                 <button onClick={onGoToMenu} className="mb-8 text-slate-400 hover:text-white flex items-center gap-2 font-bold uppercase tracking-wider text-xs"><ChevronRight className="rotate-180" size={16}/> Return to Menu</button>
+                 <div className="flex justify-between items-center mb-10">
+                     <button onClick={onGoToMenu} className="text-slate-400 hover:text-white flex items-center gap-2 font-bold uppercase tracking-wider text-xs"><ChevronRight className="rotate-180" size={16}/> Return to Menu</button>
+                     <div className="flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-xl border border-slate-700">
+                         <Database size={18} className="text-emerald-400" />
+                         <span className="text-emerald-400 font-black text-lg">{gameState.metaProgress.dataCores}</span>
+                         <span className="text-slate-500 text-xs font-bold uppercase tracking-wider">DATA CORES</span>
+                     </div>
+                 </div>
+                 
                  <h2 className="text-4xl font-black text-white mb-10 tracking-tight flex items-center gap-3"><Map size={32} className="text-blue-500" /> SECTOR SELECTION</h2>
                  
                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -443,7 +451,7 @@ const HUD: React.FC<HUDProps> = ({
                       <h1 className="text-6xl font-black text-white tracking-tighter mb-6 drop-shadow-[0_0_30px_rgba(59,130,246,0.5)]">SECTOR SECURED</h1>
                       
                       {/* Star Rating Animation */}
-                      <div className="flex justify-center gap-4 mb-10">
+                      <div className="flex justify-center gap-4 mb-6">
                           {[1, 2, 3].map(i => {
                               const earned = gameState.stageProgress[gameState.currentStage].stars >= i;
                               return (
@@ -453,10 +461,19 @@ const HUD: React.FC<HUDProps> = ({
                               )
                           })}
                       </div>
+
+                      {/* Data Cores Earned Animation */}
+                      <div className="bg-emerald-900/30 border border-emerald-500/30 px-8 py-4 rounded-2xl flex items-center gap-4 animate-in slide-in-from-bottom-8 duration-700 delay-500">
+                          <Database size={48} className="text-emerald-400 animate-pulse" />
+                          <div className="flex flex-col items-start">
+                              <span className="text-sm font-bold text-emerald-300 uppercase tracking-widest">Data Cores Extracted</span>
+                              <span className="text-5xl font-black text-white drop-shadow-[0_0_15px_rgba(52,211,153,0.5)]">+{gameState.stats.coresEarned}</span>
+                          </div>
+                      </div>
                   </div>
 
                   {/* Statistics Grid */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full mb-8">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full mb-8 mt-6">
                       <div className="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 flex flex-col items-center">
                           <Timer className="text-blue-400 mb-2" />
                           <div className="text-2xl font-black text-white">{((gameState.stats.endTime - gameState.stats.startTime) / 1000).toFixed(0)}s</div>
@@ -539,6 +556,11 @@ const HUD: React.FC<HUDProps> = ({
                     <div className="flex items-center gap-2">
                         <div className="bg-red-500/20 p-1.5 rounded-lg"><Heart className="text-red-500" size={18} /></div>
                         <span className="text-2xl font-black tracking-tight text-white">{gameState.lives}</span>
+                    </div>
+                    <div className="w-px h-8 bg-slate-700/50" />
+                    <div className="flex items-center gap-2">
+                        <div className="bg-emerald-500/20 p-1.5 rounded-lg"><Database className="text-emerald-400" size={18} /></div>
+                        <span className="text-2xl font-black tracking-tight text-white">{gameState.metaProgress.dataCores}</span>
                     </div>
                 </div>
 

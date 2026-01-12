@@ -3,8 +3,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars, Sky, Environment, Float, Text } from '@react-three/drei';
 import * as THREE from 'three';
-import { GameState, Enemy, Tower, Projectile, Effect, DamageNumber, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType, StageId, Boss, BossAbilityType, DirectorActionType, Hazard } from './types';
-import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL, STAGE_CONFIGS, getWaveDefinition, INITIAL_STAGE_PROGRESS, TECH_PATH_INFO, TACTICAL_INTEL_POOL } from './constants';
+import { GameState, Enemy, Tower, Projectile, Effect, DamageNumber, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType, StageId, Boss, BossAbilityType, DirectorActionType, Hazard, MetaProgress } from './types';
+import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL, STAGE_CONFIGS, getWaveDefinition, INITIAL_STAGE_PROGRESS, INITIAL_META_PROGRESS, TECH_PATH_INFO, TACTICAL_INTEL_POOL, STAGE_CORE_REWARDS } from './constants';
 import HUD from './components/HUD';
 import Scene from './components/Scene';
 import { saveGame, loadGame, clearSave, hasSaveData } from './saveSystem';
@@ -34,6 +34,7 @@ const App: React.FC = () => {
     targetingAbility: null,
     currentStage: StageId.STAGE_1,
     stageProgress: INITIAL_STAGE_PROGRESS,
+    metaProgress: INITIAL_META_PROGRESS,
     activeBoss: null,
     bossAnnouncement: null,
     gamePhase: 'MENU',
@@ -42,7 +43,8 @@ const App: React.FC = () => {
         endTime: 0,
         totalGoldEarned: 0,
         towersBuilt: 0,
-        abilitiesUsed: 0
+        abilitiesUsed: 0,
+        enemiesKilled: 0
     },
     bossDeathTimer: 0,
     directorAction: 'NONE',
@@ -101,6 +103,7 @@ const App: React.FC = () => {
         let nextStatus = prev.waveStatus;
         let nextPhase = prev.gamePhase;
         let nextStageProgress = { ...prev.stageProgress };
+        let nextMetaProgress = { ...prev.metaProgress };
         let nextBossAnnouncement = prev.bossAnnouncement;
         let nextStats = { ...prev.stats };
         let nextBossDeathTimer = prev.bossDeathTimer;
@@ -141,12 +144,12 @@ const App: React.FC = () => {
                 
                 const stars = nextLives >= 15 ? 3 : nextLives >= 10 ? 2 : 1;
                 
-                // Update Progress
+                // Update Stage Progress
                 const stages = Object.keys(STAGE_CONFIGS);
                 const currentIdx = stages.indexOf(prev.currentStage);
-                
-                // Keep best result
                 const currentProgress = nextStageProgress[prev.currentStage];
+                const isFirstClear = !currentProgress.completed;
+
                 nextStageProgress[prev.currentStage] = { 
                     ...currentProgress, 
                     completed: true, 
@@ -159,8 +162,29 @@ const App: React.FC = () => {
                     nextStageProgress[nextStageId] = { ...nextStageProgress[nextStageId], unlocked: true };
                 }
 
+                // --- META PROGRESSION CALCULATIONS ---
+                const rewardConfig = STAGE_CORE_REWARDS[prev.currentStage];
+                let earnedCores = isFirstClear ? rewardConfig.firstClear : rewardConfig.replay;
+                
+                // 3-Star Bonus (50%)
+                if (stars === 3) {
+                    earnedCores = Math.floor(earnedCores * 1.5);
+                }
+
+                nextMetaProgress.dataCores += earnedCores;
+                nextMetaProgress.totalCoresEarned += earnedCores;
+                
+                // Update Lifetime Stats
+                nextMetaProgress.stats.totalEnemiesKilled += nextStats.enemiesKilled;
+                nextMetaProgress.stats.totalGoldEarned += nextStats.totalGoldEarned;
+                nextMetaProgress.stats.totalBossesDefeated += 1;
+                nextMetaProgress.stats.totalPlayTime += (nextStats.endTime - nextStats.startTime);
+
+                // Set ephemeral stats for results screen
+                nextStats.coresEarned = earnedCores;
+
                 // SAVE GAME ON COMPLETION
-                saveGame(nextStageProgress);
+                saveGame(nextStageProgress, nextMetaProgress);
             }
 
             return {
@@ -169,6 +193,7 @@ const App: React.FC = () => {
                 gamePhase: nextPhase, 
                 bossDeathTimer: nextBossDeathTimer, 
                 stageProgress: nextStageProgress, 
+                metaProgress: nextMetaProgress,
                 enemies: nextEnemies,
                 stats: nextStats,
                 waveStatus: nextStatus,
@@ -615,6 +640,7 @@ const App: React.FC = () => {
                     const reward = Math.floor(stats.goldReward * prev.directorGoldBonus);
                     nextGold += reward;
                     nextStats.totalGoldEarned += reward; 
+                    nextStats.enemiesKilled += 1; // Increment kills
                     nextEnemies.splice(i, 1);
                     nextEffects.push({
                         id: Math.random().toString(), type: 'EXPLOSION', position: { ...e.position, y: 0.5 },
@@ -798,19 +824,26 @@ const App: React.FC = () => {
         if (nextLives <= 0) {
             nextGameOver = true;
             nextPhase = 'GAME_OVER';
-            // Save on Game Over to preserve bestWave progress if any (e.g. infinite mode later, or just tracking)
+            
+            // Save on Game Over to preserve bestWave progress and accrued lifetime stats
             const currentProg = nextStageProgress[prev.currentStage];
             nextStageProgress[prev.currentStage] = {
                 ...currentProg,
                 bestWave: Math.max(currentProg.bestWave, prev.wave)
             };
-            saveGame(nextStageProgress);
+            
+            // Accrue partial stats
+            nextMetaProgress.stats.totalEnemiesKilled += nextStats.enemiesKilled;
+            nextMetaProgress.stats.totalGoldEarned += nextStats.totalGoldEarned;
+            nextMetaProgress.stats.totalPlayTime += (Date.now() - nextStats.startTime);
+
+            saveGame(nextStageProgress, nextMetaProgress);
         }
 
         return {
           ...prev, enemies: nextEnemies, projectiles: nextProjectiles, towers: nextTowers,
           effects: nextEffects, damageNumbers: nextDamageNumbers, gold: nextGold, lives: nextLives, waveStatus: nextStatus, isGameOver: nextGameOver,
-          gamePhase: nextPhase, stageProgress: nextStageProgress, activeBoss: currentBoss || null, bossAnnouncement: nextBossAnnouncement,
+          gamePhase: nextPhase, stageProgress: nextStageProgress, metaProgress: nextMetaProgress, activeBoss: currentBoss || null, bossAnnouncement: nextBossAnnouncement,
           stats: nextStats, hazards: nextHazards
         };
       });
@@ -1202,6 +1235,7 @@ const App: React.FC = () => {
                      const reward = Math.floor(stats.goldReward * prev.directorGoldBonus);
                      nextGold += reward;
                      nextStats.totalGoldEarned += reward;
+                     nextStats.enemiesKilled += 1;
                  }
              }
           });
@@ -1415,11 +1449,12 @@ const App: React.FC = () => {
   const goToMenu = () => setGameState(prev => ({ ...prev, gamePhase: 'MENU' }));
   
   const handleContinue = () => {
-    const savedProgress = loadGame();
-    if (savedProgress) {
+    const data = loadGame();
+    if (data) {
         setGameState(prev => ({
             ...prev,
-            stageProgress: savedProgress,
+            stageProgress: data.stageProgress,
+            metaProgress: data.metaProgress,
             gamePhase: 'STAGE_SELECT'
         }));
     } else {
@@ -1434,6 +1469,7 @@ const App: React.FC = () => {
     setGameState(prev => ({
         ...prev,
         stageProgress: INITIAL_STAGE_PROGRESS,
+        metaProgress: INITIAL_META_PROGRESS,
         gamePhase: 'STAGE_SELECT'
     }));
   };
@@ -1445,6 +1481,7 @@ const App: React.FC = () => {
 
   const startStage = (stageId: StageId) => {
     const config = STAGE_CONFIGS[stageId];
+    // Keep metaProgress from current state or reload it to ensure we have latest if modified elsewhere
     setGameState(prev => ({
       ...prev,
       gold: config.startingGold,
@@ -1474,13 +1511,15 @@ const App: React.FC = () => {
           endTime: 0,
           totalGoldEarned: config.startingGold,
           towersBuilt: 0,
-          abilitiesUsed: 0
+          abilitiesUsed: 0,
+          enemiesKilled: 0
       },
       bossDeathTimer: 0,
       directorAction: 'NONE',
       directorScaling: 1,
       directorGoldBonus: 1,
-      directorCooldownMult: 1
+      directorCooldownMult: 1,
+      // metaProgress: prev.metaProgress // Already in prev spread but explicit for clarity that we don't reset it
     }));
     setPendingPlacement(null);
   };
