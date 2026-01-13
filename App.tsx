@@ -245,7 +245,7 @@ const App: React.FC = () => {
 
         // Apply Global System Patches (Augments)
         prev.activeAugments.forEach(aug => {
-          if (aug.type === AugmentType.STAT_BUFF) {
+          if (aug.type === AugmentType.STAT_BUFF && aug.effect) {
              if (aug.effect.special === 'BOMBARDMENT') {
                  nextTowers.forEach(t => {
                     if (t.type === TowerType.ARTILLERY) {
@@ -259,9 +259,9 @@ const App: React.FC = () => {
                     const pathMatches = !aug.effect.techTarget || aug.effect.techTarget === t.techPath;
                     
                     if (typeMatches && pathMatches) {
-                       if (aug.effect.stat === 'damage') t.damage *= (1 + aug.effect.value);
-                       if (aug.effect.stat === 'range') t.range *= (1 + aug.effect.value);
-                       if (aug.effect.stat === 'fireRate') t.fireRate *= (1 + aug.effect.value);
+                       if (aug.effect.stat === 'damage') t.damage *= (1 + (aug.effect.value || 0));
+                       if (aug.effect.stat === 'range') t.range *= (1 + (aug.effect.value || 0));
+                       if (aug.effect.stat === 'fireRate') t.fireRate *= (1 + (aug.effect.value || 0));
                     }
                  });
              }
@@ -281,7 +281,7 @@ const App: React.FC = () => {
             // Effect logic
             if (hazard.type === 'NAPALM') {
                 // Damage per tick
-                const damagePerTick = (hazard.value * tickDelta) / 1000;
+                const damagePerTick = ((hazard.value || 0) * tickDelta) / 1000;
                 nextEnemies.forEach(e => {
                     const dist = Math.sqrt(Math.pow(e.position.x - hazard.position.x, 2) + Math.pow(e.position.z - hazard.position.z, 2));
                     if (dist <= hazard.radius) {
@@ -293,7 +293,7 @@ const App: React.FC = () => {
                  nextEnemies.forEach(e => {
                     const dist = Math.sqrt(Math.pow(e.position.x - hazard.position.x, 2) + Math.pow(e.position.z - hazard.position.z, 2));
                     if (dist <= hazard.radius && dist > 0.5) {
-                        const pullFactor = hazard.value * (tickDelta / 1000);
+                        const pullFactor = (hazard.value || 0) * (tickDelta / 1000);
                         const dx = hazard.position.x - e.position.x;
                         const dz = hazard.position.z - e.position.z;
                         e.position.x += dx * pullFactor;
@@ -325,7 +325,7 @@ const App: React.FC = () => {
              // Check for active speed buffs
              if (boss.activeBuffs) {
                  const speedBuff = boss.activeBuffs.find(b => b.type === 'SPEED');
-                 if (speedBuff) speedMultiplier *= speedBuff.value;
+                 if (speedBuff) speedMultiplier *= (speedBuff.value || 1);
                  
                  // Expire buffs
                  boss.activeBuffs.forEach(b => b.duration -= tickDelta);
@@ -337,7 +337,7 @@ const App: React.FC = () => {
                  const regenBuff = boss.activeBuffs.find(b => b.type === 'REGEN');
                  if (regenBuff) {
                      // value is fraction of max health per second (e.g. 0.05)
-                     const healAmount = boss.maxHealth * regenBuff.value * (tickDelta / 1000);
+                     const healAmount = boss.maxHealth * (regenBuff.value || 0) * (tickDelta / 1000);
                      boss.health = Math.min(boss.maxHealth, boss.health + healAmount);
                      if (Math.random() < 0.1) {
                         nextEffects.push({
@@ -419,7 +419,7 @@ const App: React.FC = () => {
               if (tower.type === TowerType.ARTILLERY) {
                   prev.activeAugments.forEach(aug => {
                       if (aug.type === AugmentType.STAT_BUFF && aug.effect.special === 'CLUSTER_MUNITIONS') {
-                          blastRadius *= (1 + aug.effect.value);
+                          blastRadius *= (1 + (aug.effect.value || 0));
                       }
                   });
               }
@@ -558,7 +558,7 @@ const App: React.FC = () => {
                             if (e.id === target.id) return;
                             const splashDist = Math.sqrt(Math.pow(e.position.x - target.position.x, 2) + Math.pow(e.position.z - target.position.z, 2));
                             if (splashDist < 2) {
-                                let splashDmg = p.damage * aug.effect.value;
+                                let splashDmg = p.damage * (aug.effect.value || 0);
                                 e.health -= splashDmg;
                                 if (nextDamageNumbers.length < MAX_DAMAGE_NUMBERS) {
                                         nextDamageNumbers.push({
@@ -813,7 +813,7 @@ const App: React.FC = () => {
            nextStatus = 'IDLE';
            prev.activeAugments.forEach(aug => {
                if (aug.type === AugmentType.ECONOMY && aug.effect.special === 'INTEREST') {
-                   const interest = Math.floor(nextGold * aug.effect.value);
+                   const interest = Math.floor(nextGold * (aug.effect.value || 0));
                    nextGold += interest;
                    nextStats.totalGoldEarned += interest; // Track interest
                }
@@ -1160,7 +1160,7 @@ const App: React.FC = () => {
                         if (tower.type === TowerType.ARTILLERY) {
                             prev.activeAugments.forEach(aug => {
                                 if (aug.type === AugmentType.STAT_BUFF && aug.effect.special === 'CLUSTER_MUNITIONS') {
-                                    blastRadius *= (1 + aug.effect.value);
+                                    blastRadius *= (1 + (aug.effect.value || 0));
                                 }
                             });
                         }
