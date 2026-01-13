@@ -42,6 +42,10 @@ export interface Enemy {
   bossConfig?: BossConfig;
   currentPhase?: number;
   abilityCooldowns?: Record<string, number>;
+  isShielded?: boolean;
+  shieldTimer?: number;
+  triggeredSpawnIndices?: number[];
+  disabledZone?: { position: Vector3Tuple; radius: number; duration: number };
 }
 
 export enum TowerType {
@@ -280,8 +284,9 @@ export interface Boss extends Enemy {
 export interface WaveGroup {
   type: EnemyType;
   count: number;
-  interval: number; // ms between units
-  wait?: number; // ms to wait before starting this group
+  interval: number; // ms between bursts
+  startDelay: number; // absolute ms from wave start
+  burstSize?: number; // units per burst
 }
 
 export interface WaveDefinition {

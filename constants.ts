@@ -313,99 +313,112 @@ export const SELL_REFUND_RATIO = 0.7;
 
 export const getWaveDefinition = (stageId: StageId, waveNumber: number): WaveDefinition => {
     
-    // Generic generator for higher stages to scale difficulty
-    const generateGenericWave = (wave: number, baseScale: number): WaveDefinition => {
-        const groups: WaveGroup[] = [];
-        const scaleMult = 1 + (baseScale * 0.1); 
-        
-        // Intro Phase (1-5)
-        if (wave <= 5) {
-             groups.push({ type: EnemyType.BASIC, count: Math.floor((5 + wave * 2) * scaleMult), interval: 1000 - (wave * 50) });
-             if (wave === 3) groups.push({ type: EnemyType.SPLITTER, count: 2, interval: 2000, wait: 2000 });
-             return { composition: groups, intel: "Initial probing wave." };
-        }
-        // Speed Phase (6-10)
-        if (wave <= 10) {
-             groups.push({ type: EnemyType.BASIC, count: Math.floor(10 * scaleMult), interval: 800 });
-             groups.push({ type: EnemyType.FAST, count: Math.floor((wave - 4) * 2 * scaleMult), interval: 500, wait: 2000 });
-             if (wave >= 8) groups.push({ type: EnemyType.SPLITTER, count: Math.floor(3 * scaleMult), interval: 1500, wait: 3000 });
-             return { composition: groups, intel: "Fast units and Splitters detected." };
-        }
-        // Heavy Phase (11-15)
-        if (wave <= 15) {
-             groups.push({ type: EnemyType.BASIC, count: Math.floor(15 * scaleMult), interval: 700 });
-             groups.push({ type: EnemyType.TANK, count: Math.floor((wave - 10) * scaleMult), interval: 2500, wait: 3000 });
-             groups.push({ type: EnemyType.SPLITTER, count: Math.floor(5 * scaleMult), interval: 1500, wait: 1000 });
-             return { composition: groups, intel: "Heavy armor and replication units approaching." };
-        }
-        // Mixed Phase (16-20)
-        if (wave <= 20) {
-            groups.push({ type: EnemyType.FAST, count: Math.floor(15 * scaleMult), interval: 400 });
-            groups.push({ type: EnemyType.TANK, count: Math.floor(3 * scaleMult) + Math.floor((wave-15)/2), interval: 2000, wait: 2000 });
-            groups.push({ type: EnemyType.SPLITTER, count: Math.floor(8 * scaleMult), interval: 1200, wait: 1000 });
-            return { composition: groups, intel: "Mixed unit composition." };
-        }
-        // Swarm Phase (21+)
-        const lateScale = wave - 20;
-        groups.push({ type: EnemyType.BASIC, count: Math.floor((20 + lateScale * 5) * scaleMult), interval: 400 });
-        groups.push({ type: EnemyType.TANK, count: Math.floor((3 + lateScale) * scaleMult), interval: 1500, wait: 5000 });
-        groups.push({ type: EnemyType.FAST, count: Math.floor((10 + lateScale * 2) * scaleMult), interval: 300, wait: 2000 });
-        groups.push({ type: EnemyType.SPLITTER, count: Math.floor((5 + lateScale) * scaleMult), interval: 1000, wait: 3000 });
+    // Helper for creating wave groups with parallel logic
+    const grp = (type: EnemyType, count: number, startDelay: number, interval: number, burstSize: number = 1): WaveGroup => 
+        ({ type, count, startDelay, interval, burstSize });
 
-        return { composition: groups, intel: "High intensity wave detected." };
-    };
-
-    // Stage 1 Custom (Tutorial-ish)
-    if (stageId === StageId.STAGE_1) {
-        const groups: WaveGroup[] = [];
-        let intel = "";
-        if (waveNumber <= 5) {
-            const count = waveNumber === 1 ? 5 : waveNumber === 2 ? 7 : waveNumber === 3 ? 8 : waveNumber === 4 ? 10 : 12;
-            groups.push({ type: EnemyType.BASIC, count, interval: 1000 - (waveNumber * 50) });
-            if (waveNumber === 1) intel = "Small scout group detected. Test your defenses.";
-            else if (waveNumber === 5) intel = "Large group of basic units. Augment protocol available after this wave.";
-        } else if (waveNumber <= 10) {
-            const basicCount = 8 + (waveNumber - 6); 
-            const fastCount = waveNumber === 6 ? 3 : waveNumber === 7 ? 4 : waveNumber === 8 ? 6 : waveNumber === 9 ? 5 : 8;
-            groups.push({ type: EnemyType.BASIC, count: basicCount, interval: 900 });
-            groups.push({ type: EnemyType.FAST, count: fastCount, interval: 600, wait: 2000 });
-            if (waveNumber === 6) intel = "Fast movers incoming. High fire rate recommended.";
-        } else if (waveNumber <= 15) {
-            const basicCount = waveNumber === 14 ? 15 : 10 + (waveNumber % 2) * 2; 
-            const fastCount = waveNumber === 13 ? 10 : 5 + (waveNumber - 10);
-            const tankCount = waveNumber === 11 ? 1 : waveNumber === 12 ? 2 : waveNumber === 13 ? 2 : waveNumber === 14 ? 3 : 3;
-            groups.push({ type: EnemyType.BASIC, count: basicCount, interval: 800 });
-            groups.push({ type: EnemyType.FAST, count: fastCount, interval: 500, wait: 2000 });
-            groups.push({ type: EnemyType.TANK, count: tankCount, interval: 3000, wait: 5000 });
-            if (waveNumber === 11) intel = "Heavy armor signature confirmed. Tank unit approaching.";
-        } else if (waveNumber <= 20) {
-            groups.push({ type: EnemyType.BASIC, count: 15 + (waveNumber - 15) * 2, interval: 700 });
-            groups.push({ type: EnemyType.FAST, count: 5 + (waveNumber - 15), interval: 400, wait: 2000 });
-            groups.push({ type: EnemyType.TANK, count: 2 + Math.floor((waveNumber - 15)/2), interval: 2500, wait: 4000 });
-        } else if (waveNumber <= 25) {
-            const scale = waveNumber - 20; 
-            groups.push({ type: EnemyType.BASIC, count: 20 + scale * 5, interval: 500 });
-            groups.push({ type: EnemyType.FAST, count: 10 + scale * 2, interval: 300, wait: 3000 });
-            groups.push({ type: EnemyType.TANK, count: scale * 2, interval: 2000, wait: 5000 });
-            if (waveNumber === 25) intel = "MASSIVE WAVE DETECTED. Prepare for the Guardian.";
-        } else {
-             groups.push({ type: EnemyType.BASIC, count: 5, interval: 1000 });
-        }
-        if (!intel) intel = TACTICAL_INTEL_POOL[Math.floor(Math.random() * TACTICAL_INTEL_POOL.length)];
-        return { composition: groups, intel };
-    }
-    
-    // Stages 2-5 use generated waves with increasing difficulty multipliers
+    // Multipliers for difficulty
     const multipliers = {
+        [StageId.STAGE_1]: 1.0,
         [StageId.STAGE_2]: 1.2,
         [StageId.STAGE_3]: 1.5,
         [StageId.STAGE_4]: 2.0,
         [StageId.STAGE_5]: 2.5
     };
-    
-    const def = generateGenericWave(waveNumber, multipliers[stageId] || 1);
-    if (!def.intel) def.intel = TACTICAL_INTEL_POOL[Math.floor(Math.random() * TACTICAL_INTEL_POOL.length)];
-    return def;
+    const scale = multipliers[stageId] || 1.0;
+    const c = (base: number) => Math.floor(base * scale); // Count scaler
+
+    const groups: WaveGroup[] = [];
+    let intel = "";
+
+    // --- PHASE 1: EARLY GAME (Waves 1-5) ---
+    // Single push, teaching mechanics.
+    if (waveNumber <= 5) {
+        const p1 = 500;
+        if (waveNumber === 1) {
+            groups.push(grp(EnemyType.BASIC, c(5), p1, 1000));
+            intel = "Scout party detected. Single formation.";
+        } else if (waveNumber === 2) {
+            groups.push(grp(EnemyType.BASIC, c(8), p1, 800));
+        } else if (waveNumber === 3) {
+            // Intro Splitter
+            groups.push(grp(EnemyType.BASIC, c(5), p1, 800));
+            groups.push(grp(EnemyType.SPLITTER, c(2), p1 + 2000, 2000));
+            intel = "Splitter units carry mini-drones. Area damage recommended.";
+        } else if (waveNumber === 4) {
+            // Intro Fast
+            groups.push(grp(EnemyType.BASIC, c(8), p1, 800));
+            groups.push(grp(EnemyType.FAST, c(3), p1 + 1000, 1000));
+        } else { // Wave 5
+            // Swarm test
+            groups.push(grp(EnemyType.BASIC, c(15), p1, 400, 2)); // Burst size 2
+            intel = "High density signature. Swarm incoming.";
+        }
+    } 
+    // --- PHASE 2: MID GAME (Waves 6-15) ---
+    // Two pushes: Initial contact + Reinforcement wave
+    else if (waveNumber <= 15) {
+        const p1 = 0;
+        const p2 = 4000; // 4s gap
+        
+        if (waveNumber <= 10) {
+            // Speed & Basics
+            groups.push(grp(EnemyType.BASIC, c(10 + waveNumber), p1, 600)); 
+            groups.push(grp(EnemyType.FAST, c(5 + (waveNumber-5)), p1 + 500, 300));
+            
+            // Push 2: Blitz
+            groups.push(grp(EnemyType.FAST, c(4 + (waveNumber-5)), p2, 150, 1));
+            
+            if (waveNumber === 6) intel = "Multiple contacts. Fast movers leading the charge.";
+        } else {
+            // Heavy armor intro (11-15)
+            // Push 1: Screening force
+            groups.push(grp(EnemyType.BASIC, c(15), p1, 500));
+            groups.push(grp(EnemyType.SPLITTER, c(3), p1 + 1000, 1500));
+            
+            // Push 2: Tank Escort
+            const tanks = 1 + Math.floor((waveNumber - 10) / 2);
+            groups.push(grp(EnemyType.TANK, c(tanks), p2, 3000)); // Tank
+            groups.push(grp(EnemyType.FAST, c(tanks * 3), p2, 200, 3)); // Escort burst
+            
+            if (waveNumber === 11) intel = "Heavy armor detected. Escort configuration.";
+        }
+    }
+    // --- PHASE 3: LATE GAME (Waves 16-25) ---
+    // Three pushes: Constant pressure
+    else if (waveNumber <= 25) {
+        const p1 = 0;
+        const p2 = 3000;
+        const p3 = 7000;
+        
+        const difficulty = waveNumber - 15;
+        
+        // Push 1: Mixed Swarm
+        groups.push(grp(EnemyType.BASIC, c(15 + difficulty), p1, 300, 2));
+        groups.push(grp(EnemyType.FAST, c(8 + difficulty), p1 + 500, 200));
+        
+        // Push 2: Heavy Assault
+        groups.push(grp(EnemyType.TANK, c(2 + Math.floor(difficulty/3)), p2, 2000));
+        groups.push(grp(EnemyType.SPLITTER, c(4 + Math.floor(difficulty/2)), p2 + 500, 800));
+        
+        // Push 3: Final Blitz
+        groups.push(grp(EnemyType.FAST, c(10 + difficulty), p3, 100, 2));
+        groups.push(grp(EnemyType.BASIC, c(10), p3 + 1000, 200, 5)); // Clumps of 5
+        
+        if (waveNumber === 25) intel = "MAXIMUM THREAT. Multiple heavy columns inbound.";
+    } 
+    // --- ENDLESS / LOOP (Waves 26+) ---
+    else {
+        // Just throw everything
+        const loop = waveNumber - 25;
+        groups.push(grp(EnemyType.TANK, c(2 + loop), 0, 1000));
+        groups.push(grp(EnemyType.FAST, c(20 + loop * 2), 1000, 100, 2));
+        groups.push(grp(EnemyType.SPLITTER, c(10 + loop), 3000, 500));
+    }
+
+    if (!intel) intel = TACTICAL_INTEL_POOL[Math.floor(Math.random() * TACTICAL_INTEL_POOL.length)];
+
+    return { composition: groups, intel };
 };
 
 export const TACTICAL_INTEL_POOL = [
