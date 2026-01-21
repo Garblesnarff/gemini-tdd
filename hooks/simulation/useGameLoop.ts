@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef } from 'react';
 import { GameState } from '../../types';
 import { buildSimulationContext } from './simulationUtils';
@@ -9,11 +10,13 @@ import { simulateProjectiles } from './useProjectileSimulation';
 import { processEnemyDeaths } from './useEnemyDeath';
 import { simulateBoss } from './useBossSimulation';
 import { manageWaveState } from './useWaveManager';
+import { DIRECTOR_CONFIG, GRID_SIZE } from '../../constants';
 
 const TICK_RATE = 50;
 
 export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<React.SetStateAction<GameState>>) {
   const lastTickRef = useRef(Date.now());
+  const supplyDropTimerRef = useRef(0);
 
   useEffect(() => {
     if (gameState.gamePhase !== 'PLAYING' && 
@@ -35,27 +38,38 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
         let effects = [...prev.effects];
         let damageNumbers = [...prev.damageNumbers];
         let hazards = [...prev.hazards];
+        let supplyDrops = [...prev.supplyDrops];
         let gold = prev.gold;
         let lives = prev.lives;
         let stats = { ...prev.stats };
         let bossAnnouncement = prev.bossAnnouncement;
         let gamePhase = prev.gamePhase;
         let activeBoss = prev.activeBoss;
+        let waveStats = { ...prev.waveStats };
+        let directorUpdates: Partial<GameState> = {};
 
-        // BOSS_DEATH logic remains largely in App.tsx for timing, or we handle it here
+        // BOSS_DEATH logic
         if (gamePhase === 'BOSS_DEATH') {
             const nextBossDeathTimer = prev.bossDeathTimer - gameDelta;
             if (nextBossDeathTimer <= 0) {
-                // This transition logic handled in App.tsx for now to preserve stage unlock logic
                 return prev; 
             }
-            // Just simulate effects cleanup
             effects = effects.filter(e => {
                 e.lifetime -= 1 * prev.gameSpeed;
                 return e.lifetime > 0;
             });
             return { ...prev, effects, bossDeathTimer: nextBossDeathTimer };
         }
+
+        // Supply Drop Spawning Logic
+        // If in RELIEF, and no supply drops, small chance per tick? No, simpler: check once per wave logic inside App.tsx or here. 
+        // Let's implement lifecycle here (despawning) and spawning triggering if not exists.
+        // Actually, the prompt said "20% chance to spawn...". Let's handle spawn logic in App.tsx start wave.
+        // Here we just handle lifetime.
+        supplyDrops = supplyDrops.filter(sd => {
+            sd.lifetime -= gameDelta;
+            return sd.lifetime > 0;
+        });
 
         // 1. Tower Stats Calculation
         towers = calculateTowerStats(towers, prev.activeAugments, ctx);
@@ -69,6 +83,10 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
         const moveRes = simulateEnemyMovement(enemies, towers, ctx);
         enemies = moveRes.enemies;
         lives -= moveRes.livesLost;
+        
+        if (moveRes.livesLost > 0) {
+            waveStats.livesLostThisWave += moveRes.livesLost;
+        }
 
         // 4. Tower Combat
         const combatRes = simulateTowerCombat(towers, enemies, ctx);
@@ -89,7 +107,7 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
         stats = deathRes.stats;
         effects.push(...deathRes.newEffects);
         if (deathRes.bossDefeated) {
-             // Let App.tsx handle phase transition but we flag it here if needed
+             // Handled in App.tsx
         }
 
         // 7. Boss Simulation
@@ -120,6 +138,7 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
         const waveRes = manageWaveState(enemies, prev.waveStatus, lives, gold, ctx);
         const waveStatus = waveRes.waveStatus;
         gold = waveRes.gold;
+        directorUpdates = waveRes.directorUpdates || {};
 
         let isGameOver = prev.isGameOver;
         if (lives <= 0) {
@@ -129,9 +148,10 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
 
         return {
           ...prev,
-          enemies, towers, projectiles, effects, damageNumbers, hazards,
-          gold, lives, stats, waveStatus, isGameOver, gamePhase, bossAnnouncement,
-          bossDeathTimer: deathRes.bossDefeated ? 5000 : prev.bossDeathTimer
+          enemies, towers, projectiles, effects, damageNumbers, hazards, supplyDrops,
+          gold, lives, stats, waveStatus, isGameOver, gamePhase, bossAnnouncement, waveStats,
+          bossDeathTimer: deathRes.bossDefeated ? 5000 : prev.bossDeathTimer,
+          ...directorUpdates
         };
       });
     }, TICK_RATE);

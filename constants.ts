@@ -3,6 +3,39 @@ import { TowerType, EnemyType, TechPath, PassiveType, ActiveAbilityType, Augment
 
 export const GRID_SIZE = 12;
 
+export const DIRECTOR_CONFIG = {
+    // Thresholds
+    PRESSURE: {
+        CLEAN_WAVES: 3,
+        GOLD: 400,
+        LIVES_PCT: 0.8
+    },
+    RELIEF: {
+        LIVES_PCT: 0.4,
+        LIVES_LOST_WAVE: 2
+    },
+    // Multipliers
+    SCALING: {
+        PRESSURE: 1.30,
+        RELIEF: 0.85,
+        NEUTRAL: 1.0
+    },
+    GOLD_BONUS: {
+        PRESSURE: 1.0,
+        RELIEF: 1.25,
+        NEUTRAL: 1.0
+    },
+    COOLDOWN: {
+        PRESSURE: 0.85, // Faster boss ability cooldowns
+        RELIEF: 1.15,   // Slower boss ability cooldowns
+        NEUTRAL: 1.0
+    },
+    ELITE_CHANCE: 0.15,
+    SUPPLY_DROP_CHANCE: 0.20,
+    SUPPLY_DROP_VALUE: { MIN: 50, MAX: 100 },
+    SUPPLY_DROP_LIFETIME: 10000 // 10s
+};
+
 // --- PATHS ---
 
 const STAGE_1_PATH: Vector3Tuple[] = [

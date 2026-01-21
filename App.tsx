@@ -3,8 +3,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
-import { GameState, Enemy, Tower, Projectile, Effect, DamageNumber, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType, StageId, Boss, BossAbilityType, DirectorActionType, Hazard, MetaProgress } from './types';
-import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL, STAGE_CONFIGS, getWaveDefinition, INITIAL_STAGE_PROGRESS, INITIAL_META_PROGRESS, TECH_PATH_INFO, TACTICAL_INTEL_POOL, STAGE_CORE_REWARDS } from './constants';
+import { GameState, Enemy, Tower, Projectile, Effect, DamageNumber, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType, StageId, Boss, BossAbilityType, DirectorActionType, Hazard, MetaProgress, SupplyDrop } from './types';
+import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL, STAGE_CONFIGS, getWaveDefinition, INITIAL_STAGE_PROGRESS, INITIAL_META_PROGRESS, TECH_PATH_INFO, TACTICAL_INTEL_POOL, STAGE_CORE_REWARDS, DIRECTOR_CONFIG } from './constants';
 import HUD from './components/HUD';
 import Scene from './components/Scene';
 import { saveGame, loadGame, clearSave, hasSaveData } from './saveSystem';
@@ -22,6 +22,7 @@ const App: React.FC = () => {
     effects: [],
     damageNumbers: [],
     hazards: [],
+    supplyDrops: [],
     gameSpeed: 1,
     isGameOver: false,
     waveStatus: 'IDLE',
@@ -46,6 +47,14 @@ const App: React.FC = () => {
         enemiesKilled: 0
     },
     bossDeathTimer: 0,
+    directorState: 'NEUTRAL',
+    directorStreak: 0,
+    waveStats: {
+        livesLostThisWave: 0,
+        waveStartTime: 0,
+        waveEndTime: 0,
+        consecutiveCleanWaves: 0
+    },
     directorAction: 'NONE',
     directorScaling: 1,
     directorGoldBonus: 1,
@@ -56,7 +65,7 @@ const App: React.FC = () => {
   const [pendingPlacement, setPendingPlacement] = useState<Vector3Tuple | null>(null);
   const [canContinue, setCanContinue] = useState(false);
   
-  const spawnQueueRef = useRef<{time: number, type: EnemyType, pathIndex: number}[]>([]);
+  const spawnQueueRef = useRef<{time: number, type: EnemyType, pathIndex: number, isElite?: boolean}[]>([]);
   const waveTimerRef = useRef(0);
 
   // Initial Load Check
@@ -149,13 +158,22 @@ const App: React.FC = () => {
                         const path = stageConfig.paths[spawnEvent.pathIndex];
                         const startPos = path[0];
                         
+                        // ELITE SCALING
+                        const isElite = spawnEvent.isElite;
+                        let hpMult = prev.directorScaling;
+                        let spdMult = 1.0;
+                        if (isElite) {
+                            hpMult *= 2.0;
+                            spdMult *= 1.5;
+                        }
+
                         if (spawnEvent.type === EnemyType.BOSS) {
                             const bossConfig = stageConfig.bossConfig;
                             const boss: Boss = {
                                 id: `boss_${Date.now()}`,
                                 type: EnemyType.BOSS,
-                                health: bossConfig.baseHealth * prev.directorScaling,
-                                maxHealth: bossConfig.baseHealth * prev.directorScaling,
+                                health: bossConfig.baseHealth * hpMult,
+                                maxHealth: bossConfig.baseHealth * hpMult,
                                 speed: bossConfig.speed,
                                 position: { ...startPos },
                                 pathId: spawnEvent.pathIndex,
@@ -177,13 +195,14 @@ const App: React.FC = () => {
                             nextEnemies.push({
                                 id: `enemy_${Date.now()}_${Math.random()}`,
                                 type: spawnEvent.type,
-                                health: eStats.health * stageConfig.enemyScaling * prev.directorScaling,
-                                maxHealth: eStats.health * stageConfig.enemyScaling * prev.directorScaling,
-                                speed: eStats.speed,
+                                health: eStats.health * stageConfig.enemyScaling * hpMult,
+                                maxHealth: eStats.health * stageConfig.enemyScaling * hpMult,
+                                speed: eStats.speed * spdMult,
                                 position: { ...startPos },
                                 pathId: spawnEvent.pathIndex,
                                 waypointIndex: 0,
-                                progress: 0
+                                progress: 0,
+                                isElite: isElite
                             });
                         }
                     }
@@ -208,11 +227,15 @@ const App: React.FC = () => {
     const stageConfig = STAGE_CONFIGS[gameState.currentStage];
     const waveDef = getWaveDefinition(gameState.currentStage, nextWave);
     
-    const newQueue: {time: number, type: EnemyType, pathIndex: number}[] = [];
+    const newQueue: {time: number, type: EnemyType, pathIndex: number, isElite: boolean}[] = [];
     let pIdx = 0;
     
     waveDef.composition.forEach(g => {
         const bursts = Math.ceil(g.count / (g.burstSize || 1));
+        
+        // Director Pressure Elite Roll for this group
+        const groupIsElite = gameState.directorState === 'PRESSURE' && Math.random() < DIRECTOR_CONFIG.ELITE_CHANCE;
+
         for(let b=0; b<bursts; b++) {
             const t = g.startDelay + b * g.interval;
             const count = Math.min(g.burstSize || 1, g.count - b * (g.burstSize || 1));
@@ -220,7 +243,8 @@ const App: React.FC = () => {
                 newQueue.push({
                     time: t + Math.random() * 100,
                     type: g.type,
-                    pathIndex: pIdx % stageConfig.paths.length
+                    pathIndex: pIdx % stageConfig.paths.length,
+                    isElite: groupIsElite
                 });
                 pIdx++;
             }
@@ -228,7 +252,7 @@ const App: React.FC = () => {
     });
 
     if (nextWave === stageConfig.waves) {
-        newQueue.push({ time: 5000, type: EnemyType.BOSS, pathIndex: 0 });
+        newQueue.push({ time: 5000, type: EnemyType.BOSS, pathIndex: 0, isElite: false });
     }
     
     newQueue.sort((a,b) => a.time - b.time);
@@ -247,20 +271,46 @@ const App: React.FC = () => {
              }
         }
 
+        // Supply Drop Logic (Relief State)
+        const newSupplyDrops = [...prev.supplyDrops];
+        if (prev.directorState === 'RELIEF' && Math.random() < DIRECTOR_CONFIG.SUPPLY_DROP_CHANCE) {
+            const val = Math.floor(Math.random() * (DIRECTOR_CONFIG.SUPPLY_DROP_VALUE.MAX - DIRECTOR_CONFIG.SUPPLY_DROP_VALUE.MIN)) + DIRECTOR_CONFIG.SUPPLY_DROP_VALUE.MIN;
+            // Find valid position
+            let x = Math.floor((Math.random() - 0.5) * GRID_SIZE * 1.5);
+            let z = Math.floor((Math.random() - 0.5) * GRID_SIZE * 1.5);
+            newSupplyDrops.push({
+                id: Math.random().toString(),
+                position: { x, y: 0, z },
+                value: val,
+                lifetime: DIRECTOR_CONFIG.SUPPLY_DROP_LIFETIME,
+                maxLifetime: DIRECTOR_CONFIG.SUPPLY_DROP_LIFETIME
+            });
+        }
+
         return {
             ...prev,
             wave: nextWave,
             waveStatus: 'SPAWNING',
             isChoosingAugment: isAugmentWave,
             augmentChoices: choices,
-            waveIntel: "Scanning enemy frequencies..."
+            supplyDrops: newSupplyDrops,
+            waveStats: {
+                ...prev.waveStats,
+                livesLostThisWave: 0,
+                waveStartTime: Date.now(),
+                waveEndTime: 0
+            },
+            waveIntel: prev.waveIntel || "Scanning enemy frequencies..."
         }
     });
     
-    getWaveIntel(nextWave).then(intel => {
-        setGameState(p => ({ ...p, waveIntel: intel }));
-    });
-  }, [gameState.wave, gameState.waveStatus, gameState.currentStage]);
+    // Only fetch AI intel if director didn't override it with status change
+    if (gameState.directorState === 'NEUTRAL') {
+        getWaveIntel(nextWave).then(intel => {
+            setGameState(p => ({ ...p, waveIntel: intel }));
+        });
+    }
+  }, [gameState.wave, gameState.waveStatus, gameState.currentStage, gameState.directorState]);
 
   const handlePlaceTower = (pos: Vector3Tuple) => { setPendingPlacement(pos); };
 
@@ -388,12 +438,43 @@ const App: React.FC = () => {
           effects: [],
           damageNumbers: [],
           hazards: [],
+          supplyDrops: [],
           gamePhase: 'PLAYING',
           waveStatus: 'IDLE',
           activeBoss: null,
           bossAnnouncement: null,
           isChoosingAugment: false,
-          stats: { ...INITIAL_META_PROGRESS.stats, startTime: Date.now(), totalGoldEarned: 0, towersBuilt: 0, abilitiesUsed: 0, enemiesKilled: 0 }
+          stats: { ...INITIAL_META_PROGRESS.stats, startTime: Date.now(), totalGoldEarned: 0, towersBuilt: 0, abilitiesUsed: 0, enemiesKilled: 0 },
+          directorState: 'NEUTRAL',
+          directorStreak: 0,
+          pendingDirectorState: undefined,
+          directorScaling: 1,
+          directorGoldBonus: 1,
+          directorCooldownMult: 1,
+          directorAction: 'NONE',
+          waveStats: { livesLostThisWave: 0, waveStartTime: 0, waveEndTime: 0, consecutiveCleanWaves: 0 }
+      });
+  };
+  
+  const handleCollectSupplyDrop = (id: string) => {
+      setGameState(prev => {
+          const drop = prev.supplyDrops.find(d => d.id === id);
+          if (!drop) return prev;
+          
+          return {
+              ...prev,
+              gold: prev.gold + drop.value,
+              supplyDrops: prev.supplyDrops.filter(d => d.id !== id),
+              damageNumbers: [...prev.damageNumbers, {
+                  id: Math.random().toString(),
+                  position: { ...drop.position, y: 1 },
+                  value: drop.value,
+                  color: '#4ade80',
+                  lifetime: 40,
+                  maxLifetime: 40,
+                  isCritical: true
+              }]
+          };
       });
   };
 
@@ -408,6 +489,7 @@ const App: React.FC = () => {
             pendingPlacement={pendingPlacement}
             paths={STAGE_CONFIGS[gameState.currentStage].paths}
             environment={STAGE_CONFIGS[gameState.currentStage].environment}
+            onCollectSupplyDrop={handleCollectSupplyDrop}
         />
         <OrbitControls minPolarAngle={Math.PI / 4} maxPolarAngle={Math.PI / 2.5} minDistance={10} maxDistance={40} />
       </Canvas>

@@ -36,6 +36,7 @@ export interface Enemy {
   progress: number; // 0 to 1 between waypoints
   frozen?: number; // 0 to 1 (slow factor, 0 is stopped, 1 is normal)
   freezeTimer?: number; // Time remaining for full freeze
+  isElite?: boolean; // New: Elite status
   
   // Boss-specific properties (optional on base Enemy for easier array handling)
   isBoss?: boolean;
@@ -161,6 +162,14 @@ export interface Hazard {
     duration: number; // ms
     value: number; // damage per tick or pull force
     color: string;
+}
+
+export interface SupplyDrop {
+    id: string;
+    position: Vector3Tuple;
+    value: number;
+    lifetime: number;
+    maxLifetime: number;
 }
 
 // --- NEW STAGE & BOSS TYPES ---
@@ -304,6 +313,7 @@ export interface GameStats {
   coresEarned?: number; // Ephemeral for results screen
 }
 
+export type DirectorState = 'NEUTRAL' | 'PRESSURE' | 'RELIEF';
 export type DirectorActionType = 'NONE' | 'ELITE' | 'SUPPLY';
 
 export interface GameState {
@@ -316,6 +326,7 @@ export interface GameState {
   effects: Effect[];
   damageNumbers: DamageNumber[];
   hazards: Hazard[];
+  supplyDrops: SupplyDrop[]; // New Entity list
   gameSpeed: number; 
   isGameOver: boolean;
   waveStatus: 'IDLE' | 'SPAWNING' | 'CLEARING';
@@ -337,6 +348,15 @@ export interface GameState {
   bossDeathTimer: number;
 
   // AI Director DDA Fields
+  directorState: DirectorState;
+  directorStreak: number;
+  waveStats: { 
+      livesLostThisWave: number; 
+      waveStartTime: number; 
+      waveEndTime: number; 
+      consecutiveCleanWaves: number; 
+  };
+  pendingDirectorState?: DirectorState; // Helper to track transition streak
   directorAction: DirectorActionType;
   directorScaling: number;
   directorGoldBonus: number;

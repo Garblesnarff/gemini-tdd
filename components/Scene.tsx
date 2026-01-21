@@ -3,8 +3,9 @@ import React, { useState, useRef, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Stars, Sky, Environment, Box, Cylinder, Sphere, Float, Sparkles, Icosahedron, Ring, Html, Text, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
-import { GameState, TowerType, Vector3Tuple, EnemyType, Tower, Enemy, TechPath, Effect, PassiveType, ActiveAbilityType, Boss, StageEnvironment, DamageNumber, Hazard } from '../types';
+import { GameState, TowerType, Vector3Tuple, EnemyType, Tower, Enemy, TechPath, Effect, PassiveType, ActiveAbilityType, Boss, StageEnvironment, DamageNumber, Hazard, SupplyDrop } from '../types';
 import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, TECH_PATH_INFO, ABILITY_CONFIG } from '../constants';
+import { Package } from 'lucide-react';
 
 interface SceneProps {
   gameState: GameState;
@@ -14,6 +15,7 @@ interface SceneProps {
   pendingPlacement: Vector3Tuple | null;
   paths: Vector3Tuple[][];
   environment: StageEnvironment;
+  onCollectSupplyDrop: (id: string) => void;
 }
 
 // --- ATMOSPHERE & EFFECTS ---
@@ -241,6 +243,33 @@ const HazardsRenderer: React.FC<{ hazards: Hazard[] }> = ({ hazards }) => {
     );
 };
 
+const SupplyDropsRenderer: React.FC<{ supplyDrops: SupplyDrop[], onCollect: (id: string) => void }> = ({ supplyDrops, onCollect }) => {
+    return (
+        <>
+            {supplyDrops.map(sd => (
+                <group key={sd.id} position={[sd.position.x, 0, sd.position.z]} onClick={(e) => { e.stopPropagation(); onCollect(sd.id); }}>
+                    <Float speed={2} rotationIntensity={0.5} floatIntensity={1}>
+                        <mesh position={[0, 0.5, 0]}>
+                            <boxGeometry args={[0.6, 0.6, 0.6]} />
+                            <meshStandardMaterial color="#22c55e" emissive="#22c55e" emissiveIntensity={0.5} />
+                        </mesh>
+                        <Html position={[0, 1.2, 0]} center>
+                             <div className="bg-green-500 text-black text-[10px] font-black px-1 rounded animate-bounce">
+                                 SUPPLY
+                             </div>
+                        </Html>
+                    </Float>
+                    <Sparkles count={20} scale={2} size={4} speed={2} color="#4ade80" />
+                    <mesh rotation={[-Math.PI/2, 0, 0]} position={[0, 0.05, 0]}>
+                        <ringGeometry args={[0.4, 0.5, 32]} />
+                        <meshBasicMaterial color="#4ade80" transparent opacity={0.5} />
+                    </mesh>
+                </group>
+            ))}
+        </>
+    );
+};
+
 // --- DAMAGE NUMBERS RENDERER ---
 
 const DamageNumbersRenderer: React.FC<{ damageNumbers: DamageNumber[] }> = ({ damageNumbers }) => {
@@ -425,7 +454,8 @@ const EnemyUnit: React.FC<{ enemy: Enemy }> = ({ enemy }) => {
     // Geometry based on type
     const isSplitter = enemy.type === EnemyType.SPLITTER;
     const isMini = enemy.type === EnemyType.SPLITTER_MINI;
-    
+    const isElite = enemy.isElite;
+
     return (
         <group 
             position={[enemy.position.x, enemy.position.y + 0.5, enemy.position.z]}
@@ -434,29 +464,29 @@ const EnemyUnit: React.FC<{ enemy: Enemy }> = ({ enemy }) => {
         >
             <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
                 {isSplitter ? (
-                    <mesh castShadow>
+                    <mesh castShadow scale={isElite ? 1.4 : 1}>
                         <dodecahedronGeometry args={[0.35]} />
                         <meshStandardMaterial 
                             color={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color} 
                             emissive={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color}
-                            emissiveIntensity={0.5}
+                            emissiveIntensity={isElite ? 1 : 0.5}
                         />
                     </mesh>
                 ) : isMini ? (
-                    <mesh castShadow>
+                    <mesh castShadow scale={isElite ? 1.4 : 1}>
                          <dodecahedronGeometry args={[0.2]} />
                          <meshStandardMaterial 
                             color={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color} 
                             emissive={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color}
-                            emissiveIntensity={0.5}
+                            emissiveIntensity={isElite ? 1 : 0.5}
                          />
                     </mesh>
                 ) : (
-                    <Box args={[0.6, 0.6, 0.6]} castShadow>
+                    <Box args={[0.6, 0.6, 0.6]} castShadow scale={isElite ? 1.4 : 1}>
                         <meshStandardMaterial 
                             color={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color} 
                             emissive={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color}
-                            emissiveIntensity={enemy.freezeTimer && enemy.freezeTimer > 0 ? 0.8 : 0.5}
+                            emissiveIntensity={enemy.freezeTimer && enemy.freezeTimer > 0 ? 0.8 : isElite ? 1 : 0.5}
                         />
                     </Box>
                 )}
@@ -469,12 +499,23 @@ const EnemyUnit: React.FC<{ enemy: Enemy }> = ({ enemy }) => {
                 <planeGeometry args={[0.8 * (enemy.health / enemy.maxHealth), 0.1]} />
                 <meshBasicMaterial color="#4ade80" />
             </mesh>
+            
+            {isElite && (
+                 <>
+                    <Html position={[0, 1.4, 0]} center>
+                        <div className="text-[8px] font-black text-red-500 bg-black/50 px-1 rounded uppercase tracking-widest border border-red-500">
+                            ELITE
+                        </div>
+                    </Html>
+                    <Sparkles count={10} scale={1.5} size={3} color="#ef4444" speed={2} />
+                 </>
+            )}
 
             {hovered && (
                 <Html position={[0, 1.2, 0]} center zIndexRange={[100, 0]}>
                     <div className="bg-slate-900/90 text-white p-1.5 rounded border border-slate-700 text-[10px] font-bold whitespace-nowrap">
-                        <div className="text-slate-300">{enemy.type}</div>
-                        <div>{Math.ceil(enemy.health)} / {enemy.maxHealth}</div>
+                        <div className="text-slate-300">{isElite ? `ELITE ${enemy.type}` : enemy.type}</div>
+                        <div>{Math.ceil(enemy.health)} / {Math.ceil(enemy.maxHealth)}</div>
                     </div>
                 </Html>
             )}
@@ -874,7 +915,7 @@ const TargetingReticle: React.FC<{ position: Vector3Tuple, type: ActiveAbilityTy
     );
 };
 
-const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, selectedTowerType, pendingPlacement, paths, environment }) => {
+const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, selectedTowerType, pendingPlacement, paths, environment, onCollectSupplyDrop }) => {
   const [hoveredPos, setHoveredPos] = useState<Vector3Tuple | null>(null);
 
   // If we have a pending placement, force the ghost to be there
@@ -956,6 +997,7 @@ const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, s
       ))}
       
       <HazardsRenderer hazards={gameState.hazards} />
+      <SupplyDropsRenderer supplyDrops={gameState.supplyDrops} onCollect={onCollectSupplyDrop} />
 
       {gameState.enemies.map(enemy => (
         enemy.isBoss ? (
