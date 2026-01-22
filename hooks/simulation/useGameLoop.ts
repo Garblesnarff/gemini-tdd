@@ -58,14 +58,12 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
                 e.lifetime -= 1 * prev.gameSpeed;
                 return e.lifetime > 0;
             });
-            return { ...prev, effects, bossDeathTimer: nextBossDeathTimer };
+            // Update boss ref for death animation
+            const deadBoss = enemies.find(e => e.isBoss);
+            return { ...prev, effects, bossDeathTimer: nextBossDeathTimer, activeBoss: deadBoss || null };
         }
 
         // Supply Drop Spawning Logic
-        // If in RELIEF, and no supply drops, small chance per tick? No, simpler: check once per wave logic inside App.tsx or here. 
-        // Let's implement lifecycle here (despawning) and spawning triggering if not exists.
-        // Actually, the prompt said "20% chance to spawn...". Let's handle spawn logic in App.tsx start wave.
-        // Here we just handle lifetime.
         supplyDrops = supplyDrops.filter(sd => {
             sd.lifetime -= gameDelta;
             return sd.lifetime > 0;
@@ -80,6 +78,7 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
         enemies = hazRes.enemies;
 
         // 3. Enemy Movement
+        // This creates NEW enemy objects, breaking references to 'activeBoss'
         const moveRes = simulateEnemyMovement(enemies, towers, ctx);
         enemies = moveRes.enemies;
         lives -= moveRes.livesLost;
@@ -107,11 +106,13 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
         stats = deathRes.stats;
         effects.push(...deathRes.newEffects);
         if (deathRes.bossDefeated) {
-             // Handled in App.tsx
+             // Handled in App.tsx via gamePhase change, but we set local flag
         }
 
         // 7. Boss Simulation
-        if (activeBoss) {
+        // We must re-find the boss in the updated 'enemies' array to ensure we are simulating the current state
+        const currentBossRef = enemies.find(e => e.isBoss);
+        if (currentBossRef) {
             const bossRes = simulateBoss(enemies, towers, hazards, ctx);
             enemies = bossRes.enemies;
             towers = bossRes.towers;
@@ -146,11 +147,15 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
             gamePhase = 'GAME_OVER';
         }
 
+        // CRITICAL: Find the updated boss object to store in state, so HUD reflects damage
+        const updatedBoss = enemies.find(e => e.isBoss) || null;
+
         return {
           ...prev,
           enemies, towers, projectiles, effects, damageNumbers, hazards, supplyDrops,
           gold, lives, stats, waveStatus, isGameOver, gamePhase, bossAnnouncement, waveStats,
           bossDeathTimer: deathRes.bossDefeated ? 5000 : prev.bossDeathTimer,
+          activeBoss: updatedBoss, // Update reference
           ...directorUpdates
         };
       });

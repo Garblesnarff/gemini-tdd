@@ -85,11 +85,12 @@ const NukeEffect: React.FC<{ position: Vector3Tuple, color: string, progress: nu
     <group position={[position.x, 0, position.z]}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.1, 0]}>
         <ringGeometry args={[scale * 0.8, scale, 64]} />
-        <meshBasicMaterial color={color} transparent opacity={opacity * 0.8} side={THREE.DoubleSide} />
+        <meshBasicMaterial color={color} transparent opacity={opacity * 0.5} side={THREE.DoubleSide} />
       </mesh>
       <mesh position={[0, scale * 0.3, 0]}>
          <sphereGeometry args={[scale * 0.4, 32, 32]} />
-         <meshBasicMaterial color="#fff" emissive={color} emissiveIntensity={2} transparent opacity={opacity} />
+         {/* Reduced emissiveIntensity to prevent blinding bloom */}
+         <meshBasicMaterial color="#fff" emissive={color} emissiveIntensity={0.5} transparent opacity={opacity * 0.8} />
       </mesh>
       <Sparkles count={50} scale={scale * 1.5} size={6} speed={0.4} opacity={opacity} color={color} position={[0, scale * 0.5, 0]} />
     </group>
@@ -922,14 +923,9 @@ const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, s
   const ghostPos = pendingPlacement || hoveredPos;
   const isPending = !!pendingPlacement;
 
-  // Screen shake logic during boss death
+  // Removed problematic screen shake that caused camera drift and white screen
   useFrame((state) => {
-      if (gameState.gamePhase === 'BOSS_DEATH') {
-          const shakeIntensity = 0.2;
-          state.camera.position.x += (Math.random() - 0.5) * shakeIntensity;
-          state.camera.position.y += (Math.random() - 0.5) * shakeIntensity;
-          state.camera.position.z += (Math.random() - 0.5) * shakeIntensity;
-      }
+      // Camera shake disabled to prevent clipping and drift
   });
 
   return (

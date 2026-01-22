@@ -28,6 +28,11 @@ export function calculateTowerStats(towers: Tower[], augments: Augment[], ctx: S
       nextTower.abilityCooldown -= ctx.tickDelta;
     }
 
+    // Tick down firing cooldown
+    if (nextTower.cooldown > 0) {
+      nextTower.cooldown -= ctx.tickDelta;
+    }
+
     if (nextTower.disabledTimer && nextTower.disabledTimer > 0) return nextTower;
 
     // Apply Passive Auras from nearby towers
