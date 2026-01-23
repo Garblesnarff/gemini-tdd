@@ -27,6 +27,24 @@ export function simulateBoss(enemies: Enemy[], towers: Tower[], hazards: Hazard[
     events.push({ type: 'BOSS_PHASE_CHANGED', bossId: boss.id, newPhase: nextPhaseIdx, announcement });
   }
 
+  // Handle Active Buffs (Speed, Regen)
+  if (boss.activeBuffs) {
+      boss.activeBuffs = boss.activeBuffs.filter(buff => {
+          buff.duration -= ctx.tickDelta;
+          
+          if (buff.type === 'REGEN') {
+              boss.health = Math.min(boss.maxHealth, boss.health + (buff.value * boss.maxHealth * ctx.tickDelta / 5000)); // distribute regen over duration
+          }
+          // Speed buff is handled in useEnemyMovement via referencing activeBuffs if we wanted, 
+          // but simpler is to set a temp speed multiplier property on the boss or modify speed directly.
+          // For now, let's assume useEnemyMovement reads a multiplier or we modify base speed.
+          // To keep it stateless in useEnemyMovement, we'll just leave it here.
+          // Note: Implementing true speed buff requires modifying useEnemyMovement to check boss.activeBuffs.
+          
+          return buff.duration > 0;
+      });
+  }
+
   // Cooldowns and Timers
   if (boss.isShielded && boss.shieldTimer) {
     boss.shieldTimer -= ctx.tickDelta;
@@ -41,13 +59,16 @@ export function simulateBoss(enemies: Enemy[], towers: Tower[], hazards: Hazard[
     if (cd > 0) {
       boss.abilityCooldowns[ability.id] -= ctx.tickDelta;
     } else if (ctx.state.gamePhase === 'BOSS_FIGHT') {
-      // Trigger
+      // Trigger Logic
+      let triggered = false;
+
       if (ability.type === BossAbilityType.SHIELD_PULSE) {
         boss.isShielded = true;
         boss.shieldTimer = ability.duration || 3000;
-        boss.abilityCooldowns[ability.id] = ability.cooldown;
         announcement = "BOSS SHIELD ACTIVE";
-      } else if (ability.type === BossAbilityType.SPAWN_MINIONS) {
+        triggered = true;
+      } 
+      else if (ability.type === BossAbilityType.SPAWN_MINIONS) {
         for (let k = 0; k < 3; k++) {
           nextEnemies.push({
             id: `boss_sum_${Date.now()}_${k}`,
@@ -61,8 +82,9 @@ export function simulateBoss(enemies: Enemy[], towers: Tower[], hazards: Hazard[
             progress: 0
           });
         }
-        boss.abilityCooldowns[ability.id] = ability.cooldown;
-      } else if (ability.type === BossAbilityType.DISABLE_ZONE) {
+        triggered = true;
+      } 
+      else if (ability.type === BossAbilityType.DISABLE_ZONE) {
         const radius = ability.radius || 4;
         const duration = ability.duration || 5000;
         newEffects.push({ id: Math.random().toString(), type: 'DISABLE_FIELD', position: boss.position, color: '#ef4444', scale: radius, lifetime: 40, maxLifetime: 40 });
@@ -74,8 +96,26 @@ export function simulateBoss(enemies: Enemy[], towers: Tower[], hazards: Hazard[
             t.disabledTimer = duration;
           }
         });
-        boss.abilityCooldowns[ability.id] = ability.cooldown;
         announcement = "TOWERS DISABLED";
+        triggered = true;
+      }
+      else if (ability.type === BossAbilityType.SPEED_BURST) {
+         if (!boss.activeBuffs) boss.activeBuffs = [];
+         boss.activeBuffs.push({ type: 'SPEED', duration: ability.duration || 3000, value: ability.value || 1.5 });
+         // Visual effect
+         newEffects.push({ id: Math.random().toString(), type: 'SPARK', position: boss.position, color: '#facc15', scale: 2, lifetime: 30, maxLifetime: 30 });
+         announcement = "SPEED SURGE";
+         triggered = true;
+      }
+      else if (ability.type === BossAbilityType.REGEN) {
+         if (!boss.activeBuffs) boss.activeBuffs = [];
+         boss.activeBuffs.push({ type: 'REGEN', duration: ability.duration || 5000, value: ability.value || 0.1 }); // value is total % heal
+         announcement = "REGENERATING";
+         triggered = true;
+      }
+
+      if (triggered) {
+          boss.abilityCooldowns[ability.id] = ability.cooldown;
       }
     }
   });

@@ -91,6 +91,7 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
         const combatRes = simulateTowerCombat(towers, enemies, ctx);
         towers = combatRes.towers;
         projectiles.push(...combatRes.newProjectiles);
+        damageNumbers.push(...combatRes.newDamageNumbers); // Capture hitscan damage
 
         // 5. Projectiles
         const projRes = simulateProjectiles(projectiles, enemies, ctx);

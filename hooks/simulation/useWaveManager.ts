@@ -14,8 +14,8 @@ export function manageWaveState(enemies: Enemy[], waveStatus: string, lives: num
     events.push({ type: 'WAVE_COMPLETE', waveNumber: ctx.state.wave });
     
     // Economy Augments (Interest)
-    const interestAug = ctx.activeAugments.find(a => a.effect.special === 'INTEREST');
-    if (interestAug) {
+    const interestAug = ctx.activeAugments.find(a => a.effect && a.effect.special === 'INTEREST');
+    if (interestAug && interestAug.effect) {
         nextGold += Math.floor(nextGold * (interestAug.effect.value || 0.1));
     }
 

@@ -1,3 +1,4 @@
+
 import { Enemy, EnemyType, Effect, GameStats } from '../../types';
 import { SimulationContext, GameEvent } from './types';
 import { ENEMY_STATS } from '../../constants';
@@ -35,7 +36,7 @@ export function processEnemyDeaths(enemies: Enemy[], gold: number, stats: GameSt
             
             // Chain Reaction Augment
             const chainAug = ctx.activeAugments.find(a => a.id === 'chain_reaction');
-            if (chainAug) miniHealth *= (1 - (chainAug.effect.value || 0.5));
+            if (chainAug && chainAug.effect) miniHealth *= (1 - (chainAug.effect.value || 0.5));
 
             nextEnemies.push({
               id: `mini_${e.id}_${k}`,

@@ -47,6 +47,7 @@ export interface Enemy {
   shieldTimer?: number;
   triggeredSpawnIndices?: number[];
   disabledZone?: { position: Vector3Tuple; radius: number; duration: number };
+  activeBuffs?: { type: 'SPEED' | 'REGEN'; duration: number; value: number }[];
 }
 
 export enum TowerType {

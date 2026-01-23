@@ -16,8 +16,13 @@ export async function getWaveIntel(waveNumber: number) {
     });
 
     return response.text?.trim() || "Enemy signatures detected. Maintain defensive formation.";
-  } catch (error) {
-    console.error("Gemini Error:", error);
+  } catch (error: any) {
+    // Gracefully handle quota exhaustion or network errors
+    if (error.status === 429 || error.code === 429) {
+        console.warn("Intel feed offline (Quota). Switching to local tactical database.");
+    } else {
+        console.warn("Intel feed disrupted:", error.message || "Unknown Error");
+    }
     return "Intelligence feed disrupted. Stay alert, Commander.";
   }
 }

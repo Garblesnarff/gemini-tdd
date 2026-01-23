@@ -1,10 +1,12 @@
-import { Tower, Enemy, Projectile, TowerType, TargetPriority } from '../../types';
+
+import { Tower, Enemy, Projectile, TowerType, TargetPriority, DamageNumber } from '../../types';
 import { SimulationContext } from './types';
 import { sortByPriority, getDistance2D } from './simulationUtils';
 import { TOWER_STATS } from '../../constants';
 
 export function simulateTowerCombat(towers: Tower[], enemies: Enemy[], ctx: SimulationContext) {
   const newProjectiles: Projectile[] = [];
+  const newDamageNumbers: DamageNumber[] = [];
 
   towers.forEach(tower => {
     // Check if tower is ready to fire
@@ -50,16 +52,27 @@ export function simulateTowerCombat(towers: Tower[], enemies: Enemy[], ctx: Simu
           });
         } else {
           // Instant Hitscan (Basic/Fast)
-          applyDamage(target, tower.damage, ctx);
+          const dmg = applyDamage(target, tower.damage, ctx);
+          if (dmg > 0) {
+             newDamageNumbers.push({
+                 id: Math.random().toString(),
+                 position: { ...target.position, y: 1 },
+                 value: dmg,
+                 color: '#3b82f6',
+                 lifetime: 20,
+                 maxLifetime: 20,
+                 isCritical: false
+             });
+          }
         }
       }
     }
   });
 
-  return { towers, newProjectiles };
+  return { towers, newProjectiles, newDamageNumbers };
 }
 
-function applyDamage(target: Enemy, rawDamage: number, ctx: SimulationContext) {
+function applyDamage(target: Enemy, rawDamage: number, ctx: SimulationContext): number {
     let damage = rawDamage;
     
     // Boss Resistances
@@ -70,4 +83,5 @@ function applyDamage(target: Enemy, rawDamage: number, ctx: SimulationContext) {
     }
 
     target.health -= damage;
+    return damage;
 }

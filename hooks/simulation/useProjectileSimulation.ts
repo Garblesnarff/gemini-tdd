@@ -40,7 +40,7 @@ export function simulateProjectiles(projectiles: Projectile[], enemies: Enemy[],
                 damage = 0;
                 isBlocked = true;
             } else {
-                const phase = target.bossConfig.phases[target.currentPhase || 0];
+                const phase = target.bossConfig?.phases[target.currentPhase || 0];
                 if (phase) damage *= (1 - (phase.damageResistance || 0));
             }
         }
@@ -53,7 +53,7 @@ export function simulateProjectiles(projectiles: Projectile[], enemies: Enemy[],
             
             // Sniper Splash Augment
             const splashAug = ctx.activeAugments.find(a => a.id === 'splash_sniper_1');
-            if (splashAug && p.sourceType === TowerType.SNIPER) {
+            if (splashAug && splashAug.effect && p.sourceType === TowerType.SNIPER) {
                 const splashDmg = damage * (splashAug.effect.value || 0.5);
                 enemies.forEach(e => {
                     if (e.id === target.id) return;
@@ -86,7 +86,7 @@ function processArtilleryHit(pos: {x:number, y:number, z:number}, p: Projectile,
     const hitbox = e.isBoss ? (e.bossConfig?.size || 1) * 0.5 : 0;
     if (d <= radius + hitbox) {
       let dmg = p.damage;
-      if (e.isBoss) {
+      if (e.isBoss && e.bossConfig) {
         if (e.isShielded) dmg = 0;
         else {
             const phase = e.bossConfig.phases[e.currentPhase || 0];
