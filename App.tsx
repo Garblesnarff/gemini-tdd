@@ -232,8 +232,6 @@ const App: React.FC = () => {
     
     waveDef.composition.forEach(g => {
         const bursts = Math.ceil(g.count / (g.burstSize || 1));
-        
-        // Director Pressure Elite Roll for this group
         const groupIsElite = gameState.directorState === 'PRESSURE' && Math.random() < DIRECTOR_CONFIG.ELITE_CHANCE;
 
         for(let b=0; b<bursts; b++) {
@@ -260,7 +258,6 @@ const App: React.FC = () => {
     waveTimerRef.current = 0;
     
     setGameState(prev => {
-        // Every 5 waves, trigger augment selection (but not on wave 1)
         const isAugmentWave = nextWave > 1 && (nextWave % 5 === 0);
         let choices: Augment[] = [];
         if (isAugmentWave) {
@@ -271,11 +268,9 @@ const App: React.FC = () => {
              }
         }
 
-        // Supply Drop Logic (Relief State)
         const newSupplyDrops = [...prev.supplyDrops];
         if (prev.directorState === 'RELIEF' && Math.random() < DIRECTOR_CONFIG.SUPPLY_DROP_CHANCE) {
             const val = Math.floor(Math.random() * (DIRECTOR_CONFIG.SUPPLY_DROP_VALUE.MAX - DIRECTOR_CONFIG.SUPPLY_DROP_VALUE.MIN)) + DIRECTOR_CONFIG.SUPPLY_DROP_VALUE.MIN;
-            // Find valid position
             let x = Math.floor((Math.random() - 0.5) * GRID_SIZE * 1.5);
             let z = Math.floor((Math.random() - 0.5) * GRID_SIZE * 1.5);
             newSupplyDrops.push({
@@ -304,7 +299,6 @@ const App: React.FC = () => {
         }
     });
     
-    // Only fetch AI intel if director didn't override it with status change
     if (gameState.directorState === 'NEUTRAL') {
         getWaveIntel(nextWave).then(intel => {
             setGameState(p => ({ ...p, waveIntel: intel }));
@@ -350,7 +344,7 @@ const App: React.FC = () => {
       }
   };
 
-  const handleBatchTrigger = (type: ActiveAbilityType) => {
+  const handleBatchTrigger = useCallback((type: ActiveAbilityType) => {
       if (type === ActiveAbilityType.ORBITAL_STRIKE || type === ActiveAbilityType.SINGULARITY || type === ActiveAbilityType.NAPALM) {
           setGameState(prev => ({ ...prev, targetingAbility: type }));
       } else {
@@ -381,6 +375,47 @@ const App: React.FC = () => {
               return { ...prev, towers };
           });
       }
+  }, []);
+
+  const handleSingleTrigger = (towerId: string) => {
+      setGameState(prev => {
+          const tower = prev.towers.find(t => t.id === towerId);
+          if (!tower || tower.activeType === ActiveAbilityType.NONE || tower.abilityCooldown > 0) return prev;
+
+          const type = tower.activeType;
+          const config = ABILITY_CONFIG[type];
+          if (!config) return prev;
+
+          // Targeted Abilities -> Enter Targeting Mode
+          if (type === ActiveAbilityType.ORBITAL_STRIKE || type === ActiveAbilityType.NAPALM || type === ActiveAbilityType.SINGULARITY) {
+               return { ...prev, targetingAbility: type };
+          }
+
+          // Immediate Abilities -> Fire just this tower
+          if (type === ActiveAbilityType.ERUPTION) {
+               prev.effects.push({ id: Math.random().toString(), type: 'NOVA', position: { ...tower.position }, color: config.color, scale: config.range, lifetime: 40, maxLifetime: 40 });
+               prev.enemies.forEach(e => {
+                   const dist = Math.sqrt(Math.pow(e.position.x - tower.position.x, 2) + Math.pow(e.position.z - tower.position.z, 2));
+                   if (dist <= config.range) {
+                       e.health -= config.damage;
+                   }
+               });
+          }
+
+          const newTowers = prev.towers.map(t => {
+               if (t.id === towerId) {
+                   return {
+                       ...t,
+                       abilityCooldown: config.cooldown * prev.directorCooldownMult,
+                       abilityMaxCooldown: config.cooldown * prev.directorCooldownMult,
+                       abilityDuration: config.duration || 0
+                   };
+               }
+               return t;
+          });
+
+          return { ...prev, towers: newTowers, stats: { ...prev.stats, abilitiesUsed: prev.stats.abilitiesUsed + 1 } };
+      });
   };
 
   const handleTargetedAbility = (pos: Vector3Tuple) => {
@@ -390,7 +425,19 @@ const App: React.FC = () => {
       if (!config) return;
       
       setGameState(prev => {
-          const readyTowerIndex = prev.towers.findIndex(t => t.activeType === type && t.abilityCooldown <= 0);
+          // Prioritize selected tower if it matches the ability and is ready
+          let readyTowerIndex = -1;
+          
+          if (prev.selectedTowerId) {
+              const selectedIdx = prev.towers.findIndex(t => t.id === prev.selectedTowerId && t.activeType === type && t.abilityCooldown <= 0);
+              if (selectedIdx !== -1) readyTowerIndex = selectedIdx;
+          }
+          
+          // Fallback to finding any ready tower of that type
+          if (readyTowerIndex === -1) {
+              readyTowerIndex = prev.towers.findIndex(t => t.activeType === type && t.abilityCooldown <= 0);
+          }
+
           if (readyTowerIndex === -1) return { ...prev, targetingAbility: null };
           
           const newTowers = [...prev.towers];
@@ -423,6 +470,41 @@ const App: React.FC = () => {
           return { ...prev, towers: newTowers, targetingAbility: null, stats: { ...prev.stats, abilitiesUsed: prev.stats.abilitiesUsed + 1 } };
       });
   };
+
+  // Keyboard Hotkeys
+  useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+          if (gameState.gamePhase !== 'PLAYING' && gameState.gamePhase !== 'BOSS_FIGHT') return;
+          // Ignore if typing in an input (not currently used but good practice)
+          if (e.target instanceof HTMLInputElement) return;
+
+          switch(e.key) {
+              case '1': 
+                  handleBatchTrigger(ActiveAbilityType.ERUPTION); 
+                  handleBatchTrigger(ActiveAbilityType.NAPALM); 
+                  break;
+              case '2': 
+                  handleBatchTrigger(ActiveAbilityType.OVERCLOCK); 
+                  handleBatchTrigger(ActiveAbilityType.BARRAGE); 
+                  break;
+              case '3': 
+                  handleBatchTrigger(ActiveAbilityType.FREEZE); 
+                  handleBatchTrigger(ActiveAbilityType.SINGULARITY); 
+                  break;
+              case '4': 
+                  handleBatchTrigger(ActiveAbilityType.ORBITAL_STRIKE); 
+                  break;
+              case 'Escape':
+                  if (gameState.targetingAbility) setGameState(p => ({ ...p, targetingAbility: null }));
+                  else if (pendingPlacement) setPendingPlacement(null);
+                  else if (gameState.selectedTowerId) setGameState(p => ({ ...p, selectedTowerId: null }));
+                  break;
+          }
+      };
+
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [gameState.gamePhase, gameState.targetingAbility, pendingPlacement, gameState.selectedTowerId, handleBatchTrigger]);
 
   const handleStartStage = (id: StageId) => {
       const config = STAGE_CONFIGS[id];
@@ -511,6 +593,17 @@ const App: React.FC = () => {
 
                 const config = UPGRADE_CONFIG.paths[path]?.[nextLevel];
                 if (!config) return prev;
+                
+                // Determine Correct Active Ability for Tower Type + Tech Combo
+                let activeType = config.active || tower.activeType;
+                if (nextLevel === 3) {
+                    if (path === TechPath.MAGMA) {
+                        if (tower.type === TowerType.SNIPER) activeType = ActiveAbilityType.ORBITAL_STRIKE;
+                        if (tower.type === TowerType.ARTILLERY) activeType = ActiveAbilityType.NAPALM;
+                    }
+                    if (path === TechPath.PLASMA && tower.type === TowerType.ARTILLERY) activeType = ActiveAbilityType.BARRAGE;
+                    if (path === TechPath.VOID && tower.type === TowerType.ARTILLERY) activeType = ActiveAbilityType.SINGULARITY;
+                }
 
                 const towers = prev.towers.map(t => {
                     if (t.id === id) {
@@ -526,8 +619,8 @@ const App: React.FC = () => {
                             range: t.baseRange * (config.range || 1),
                             baseRange: t.baseRange * (config.range || 1),
                             passiveType: config.passive || t.passiveType,
-                            activeType: config.active || t.activeType,
-                            abilityMaxCooldown: config.active ? (ABILITY_CONFIG[config.active]?.cooldown || 0) : 0
+                            activeType: activeType,
+                            abilityMaxCooldown: activeType !== ActiveAbilityType.NONE ? (ABILITY_CONFIG[activeType]?.cooldown || 0) : 0
                         };
                     }
                     return t;
@@ -548,10 +641,7 @@ const App: React.FC = () => {
             }
         }}
         onSetSpeed={(s) => setGameState(p => ({ ...p, gameSpeed: s }))}
-        onTriggerAbility={(id) => {
-            const t = gameState.towers.find(tw => tw.id === id);
-            if (t && t.activeType !== ActiveAbilityType.NONE) handleBatchTrigger(t.activeType);
-        }}
+        onTriggerAbility={handleSingleTrigger}
         pendingPlacement={pendingPlacement}
         onConfirmPlacement={handleConfirmPlacement}
         onCancelPlacement={() => { setPendingPlacement(null); setGameState(p => ({ ...p, targetingAbility: null })); }}
