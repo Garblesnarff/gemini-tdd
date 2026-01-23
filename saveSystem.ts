@@ -13,7 +13,7 @@ export interface SaveData {
 export const saveGame = (stageProgress: Record<StageId, StageProgress>, metaProgress: MetaProgress) => {
   try {
     const data: SaveData = {
-      version: 2,
+      version: 3,
       stageProgress,
       metaProgress
     };
@@ -32,7 +32,7 @@ export const loadGame = (): { stageProgress: Record<StageId, StageProgress>, met
     
     // Migration Logic
     if (data.version === 1) {
-        // Migrate V1 to V2
+        // Migrate V1 to V3
         return {
             stageProgress: { ...INITIAL_STAGE_PROGRESS, ...data.stageProgress },
             metaProgress: INITIAL_META_PROGRESS
@@ -40,6 +40,18 @@ export const loadGame = (): { stageProgress: Record<StageId, StageProgress>, met
     }
 
     if (data.version === 2) {
+        // Migrate V2 to V3 (Add upgradeLevels)
+        return {
+            stageProgress: { ...INITIAL_STAGE_PROGRESS, ...data.stageProgress },
+            metaProgress: { 
+                ...INITIAL_META_PROGRESS, 
+                ...data.metaProgress,
+                upgradeLevels: {} 
+            }
+        };
+    }
+
+    if (data.version === 3) {
         return {
             stageProgress: { ...INITIAL_STAGE_PROGRESS, ...data.stageProgress },
             metaProgress: { ...INITIAL_META_PROGRESS, ...data.metaProgress }

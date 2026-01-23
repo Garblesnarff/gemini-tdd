@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
@@ -6,9 +7,11 @@ import { GameState, Enemy, Tower, Projectile, Effect, DamageNumber, TowerType, E
 import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL, STAGE_CONFIGS, getWaveDefinition, INITIAL_STAGE_PROGRESS, INITIAL_META_PROGRESS, TECH_PATH_INFO, TACTICAL_INTEL_POOL, STAGE_CORE_REWARDS, DIRECTOR_CONFIG } from './constants';
 import HUD from './components/HUD';
 import Scene from './components/Scene';
+import MetaShop from './components/MetaShop';
 import { saveGame, loadGame, clearSave, hasSaveData } from './saveSystem';
 import { getWaveIntel } from './geminiService';
 import { useGameLoop } from './hooks/simulation/useGameLoop';
+import { getAppliedMetaEffects } from './metaUpgrades';
 
 const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>({
@@ -34,6 +37,7 @@ const App: React.FC = () => {
     currentStage: StageId.STAGE_1,
     stageProgress: INITIAL_STAGE_PROGRESS,
     metaProgress: INITIAL_META_PROGRESS,
+    metaEffects: getAppliedMetaEffects(INITIAL_META_PROGRESS), // Init defaults
     activeBoss: null,
     bossAnnouncement: null,
     gamePhase: 'MENU',
@@ -310,8 +314,12 @@ const App: React.FC = () => {
 
   const handleConfirmPlacement = () => {
       if (!pendingPlacement) return;
+      
       const stats = TOWER_STATS[selectedTowerType];
-      if (gameState.gold >= stats.cost) {
+      // Apply Meta Shop Discount
+      const cost = Math.floor(stats.cost * gameState.metaEffects.towerCostMultiplier);
+
+      if (gameState.gold >= cost) {
           const newTower: Tower = {
               id: Math.random().toString(),
               type: selectedTowerType,
@@ -326,7 +334,7 @@ const App: React.FC = () => {
               lastShotTime: 0,
               level: 1,
               techPath: TechPath.NONE,
-              totalInvested: stats.cost,
+              totalInvested: cost,
               passiveType: PassiveType.NONE,
               activeType: ActiveAbilityType.NONE,
               abilityCooldown: 0,
@@ -336,7 +344,7 @@ const App: React.FC = () => {
           };
           setGameState(prev => ({
               ...prev,
-              gold: prev.gold - stats.cost,
+              gold: prev.gold - cost,
               towers: [...prev.towers, newTower],
               stats: { ...prev.stats, towersBuilt: prev.stats.towersBuilt + 1 }
           }));
@@ -536,11 +544,14 @@ const App: React.FC = () => {
 
   const handleStartStage = (id: StageId) => {
       const config = STAGE_CONFIGS[id];
+      const effects = getAppliedMetaEffects(gameState.metaProgress);
+
       setGameState({
           ...gameState,
           currentStage: id,
-          gold: config.startingGold,
-          lives: config.startingLives,
+          gold: config.startingGold + effects.bonusStartingGold,
+          lives: config.startingLives + effects.bonusStartingLives,
+          metaEffects: effects,
           wave: 0,
           enemies: [],
           towers: [],
@@ -588,6 +599,23 @@ const App: React.FC = () => {
       });
   };
 
+  const handleBuyMetaUpgrade = (upgradeId: string, cost: number) => {
+      setGameState(prev => {
+          if (prev.metaProgress.dataCores < cost) return prev;
+          
+          const nextMeta = { ...prev.metaProgress };
+          nextMeta.dataCores -= cost;
+          nextMeta.upgradeLevels[upgradeId] = (nextMeta.upgradeLevels[upgradeId] || 0) + 1;
+          
+          saveGame(prev.stageProgress, nextMeta);
+          
+          return {
+              ...prev,
+              metaProgress: nextMeta
+          };
+      });
+  };
+
   return (
     <>
       <Canvas shadows camera={{ position: [0, 15, 15], fov: 45 }}>
@@ -603,6 +631,14 @@ const App: React.FC = () => {
         />
         <OrbitControls minPolarAngle={Math.PI / 4} maxPolarAngle={Math.PI / 2.5} minDistance={10} maxDistance={40} />
       </Canvas>
+      
+      {gameState.gamePhase === 'SHOP' && (
+          <MetaShop 
+              metaProgress={gameState.metaProgress} 
+              onPurchase={handleBuyMetaUpgrade}
+              onBack={() => setGameState(p => ({ ...p, gamePhase: 'STAGE_SELECT' }))}
+          />
+      )}
       
       <HUD 
         gameState={gameState}
@@ -659,9 +695,13 @@ const App: React.FC = () => {
             setGameState(prev => {
                 const t = prev.towers.find(t => t.id === id);
                 if (!t) return prev;
+                
+                // Apply Meta Shop Sell Ratio
+                const sellRatio = prev.metaEffects ? (SELL_REFUND_RATIO + (prev.metaEffects.sellRatio - 0.7)) : SELL_REFUND_RATIO;
+                
                 return {
                     ...prev,
-                    gold: prev.gold + Math.floor(t.totalInvested * SELL_REFUND_RATIO),
+                    gold: prev.gold + Math.floor(t.totalInvested * sellRatio),
                     towers: prev.towers.filter(t => t.id !== id),
                     selectedTowerId: null
                 };
@@ -708,10 +748,12 @@ const App: React.FC = () => {
                 ...p,
                 stageProgress: INITIAL_STAGE_PROGRESS,
                 metaProgress: INITIAL_META_PROGRESS,
+                metaEffects: getAppliedMetaEffects(INITIAL_META_PROGRESS),
                 gamePhase: 'STAGE_SELECT'
             }));
         }}
         totalWaves={STAGE_CONFIGS[gameState.currentStage].waves}
+        onOpenShop={() => setGameState(p => ({ ...p, gamePhase: 'SHOP' }))}
       />
     </>
   );

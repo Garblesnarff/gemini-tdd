@@ -6,6 +6,7 @@ import { evaluateDirectorState } from './directorSystem';
 export function manageWaveState(enemies: Enemy[], waveStatus: string, lives: number, gold: number, ctx: SimulationContext) {
   let nextStatus = waveStatus;
   let nextGold = gold;
+  let nextLives = lives;
   const events: GameEvent[] = [];
   let directorUpdates: Partial<GameState> = {};
 
@@ -13,10 +14,28 @@ export function manageWaveState(enemies: Enemy[], waveStatus: string, lives: num
     nextStatus = 'IDLE';
     events.push({ type: 'WAVE_COMPLETE', waveNumber: ctx.state.wave });
     
-    // Economy Augments (Interest)
+    // 1. Augment Interest
     const interestAug = ctx.activeAugments.find(a => a.effect && a.effect.special === 'INTEREST');
+    let augInterest = 0;
     if (interestAug && interestAug.effect) {
-        nextGold += Math.floor(nextGold * (interestAug.effect.value || 0.1));
+        augInterest = (interestAug.effect.value || 0.1);
+    }
+    
+    // 2. Meta Interest
+    const metaInterest = ctx.metaEffects.interestRate;
+    const totalInterest = augInterest + metaInterest;
+
+    if (totalInterest > 0) {
+        nextGold += Math.floor(nextGold * totalInterest);
+    }
+
+    // 3. Meta Life Regen
+    if (ctx.metaEffects.lifeRegenWaves && ctx.state.wave % ctx.metaEffects.lifeRegenWaves === 0) {
+        const stageConfig = ctx.stageConfig;
+        const maxLives = stageConfig.startingLives + ctx.metaEffects.bonusStartingLives;
+        if (nextLives < maxLives) {
+            nextLives++;
+        }
     }
 
     // AI Director Evaluation
@@ -27,7 +46,7 @@ export function manageWaveState(enemies: Enemy[], waveStatus: string, lives: num
     const stateForEval: GameState = {
         ...ctx.state,
         gold: nextGold,
-        lives: lives,
+        lives: nextLives,
         waveStats: {
             ...ctx.state.waveStats,
             consecutiveCleanWaves: nextCleanStreak,
@@ -39,6 +58,7 @@ export function manageWaveState(enemies: Enemy[], waveStatus: string, lives: num
     
     directorUpdates = {
         ...changes,
+        lives: nextLives,
         waveStats: {
             livesLostThisWave: 0, // Reset for next wave
             waveStartTime: 0,

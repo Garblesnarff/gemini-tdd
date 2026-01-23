@@ -28,6 +28,7 @@ interface HUDProps {
   onContinue: () => void;
   onNewGame: () => void;
   totalWaves: number;
+  onOpenShop: () => void;
 }
 
 interface AbilityStat {
@@ -276,7 +277,8 @@ const HUD: React.FC<HUDProps> = ({
   canContinue,
   onContinue,
   onNewGame,
-  totalWaves
+  totalWaves,
+  onOpenShop
 }) => {
   const selectedTower = gameState.selectedTowerId 
     ? gameState.towers.find(t => t.id === gameState.selectedTowerId) 
@@ -308,6 +310,17 @@ const HUD: React.FC<HUDProps> = ({
     if (gameState.directorAction === 'SUPPLY') return 'text-green-400';
     return 'text-blue-400';
   }, [gameState.directorAction]);
+
+  // Apply Meta Cost Reduction for Tower Buttons
+  const getTowerCost = (baseCost: number) => {
+      if (!gameState.metaEffects) return baseCost;
+      return Math.floor(baseCost * gameState.metaEffects.towerCostMultiplier);
+  };
+
+  const getSellValue = (towerInvested: number) => {
+      const ratio = gameState.metaEffects ? (SELL_REFUND_RATIO + (gameState.metaEffects.sellRatio - 0.7)) : SELL_REFUND_RATIO;
+      return Math.floor(towerInvested * ratio);
+  };
 
   return (
     <div className="fixed inset-0 pointer-events-none p-4 md:p-6 select-none font-sans z-10">
@@ -342,10 +355,16 @@ const HUD: React.FC<HUDProps> = ({
              <div className="w-full max-w-6xl">
                  <div className="flex justify-between items-center mb-10">
                      <button onClick={onGoToMenu} className="text-slate-400 hover:text-white flex items-center gap-2 font-bold uppercase tracking-wider text-xs"><ChevronRight className="rotate-180" size={16}/> Return to Menu</button>
-                     <div className="flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-xl border border-slate-700">
-                         <Database size={18} className="text-emerald-400" />
-                         <span className="text-emerald-400 font-black text-lg">{gameState.metaProgress.dataCores}</span>
-                         <span className="text-slate-500 text-xs font-bold uppercase tracking-wider">DATA CORES</span>
+                     <div className="flex items-center gap-4">
+                        <button onClick={onOpenShop} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 hover:scale-105 transition-all px-4 py-2 rounded-xl border border-slate-600 shadow-lg">
+                             <Swords size={18} className="text-blue-400" />
+                             <span className="text-white font-bold uppercase text-sm tracking-wider">Armory</span>
+                        </button>
+                        <div className="flex items-center gap-2 bg-slate-800 px-4 py-2 rounded-xl border border-slate-700">
+                            <Database size={18} className="text-emerald-400" />
+                            <span className="text-emerald-400 font-black text-lg">{gameState.metaProgress.dataCores}</span>
+                            <span className="text-slate-500 text-xs font-bold uppercase tracking-wider">DATA CORES</span>
+                        </div>
                      </div>
                  </div>
                  
@@ -555,12 +574,7 @@ const HUD: React.FC<HUDProps> = ({
                     <div className="w-px h-8 bg-slate-700/50" />
                     <div className="flex items-center gap-2">
                         <div className="bg-red-500/20 p-1.5 rounded-lg"><Heart className="text-red-500" size={18} /></div>
-                        <span className="text-2xl font-black tracking-tight text-white">{gameState.lives}</span>
-                    </div>
-                    <div className="w-px h-8 bg-slate-700/50" />
-                    <div className="flex items-center gap-2">
-                        <div className="bg-emerald-500/20 p-1.5 rounded-lg"><Database className="text-emerald-400" size={18} /></div>
-                        <span className="text-2xl font-black tracking-tight text-white">{gameState.metaProgress.dataCores}</span>
+                        <span className="text-2xl font-black tracking-tight text-white">{Math.floor(gameState.lives)}</span>
                     </div>
                 </div>
 
@@ -701,7 +715,7 @@ const HUD: React.FC<HUDProps> = ({
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
-                            <button onClick={() => onSellTower(selectedTower.id)} className="flex items-center gap-2 px-3 py-2 bg-red-900/30 hover:bg-red-900/50 border border-red-900/50 rounded-lg text-red-400 hover:text-red-300 transition-colors text-xs font-bold uppercase tracking-wider"><Trash2 size={14} />Sell (+{Math.floor(selectedTower.totalInvested * SELL_REFUND_RATIO)})</button>
+                            <button onClick={() => onSellTower(selectedTower.id)} className="flex items-center gap-2 px-3 py-2 bg-red-900/30 hover:bg-red-900/50 border border-red-900/50 rounded-lg text-red-400 hover:text-red-300 transition-colors text-xs font-bold uppercase tracking-wider"><Trash2 size={14} />Sell (+{getSellValue(selectedTower.totalInvested)})</button>
                             <button onClick={onDeselectTower} className="p-2 hover:bg-slate-800 rounded-lg transition-colors text-slate-400 hover:text-white"><X size={20} /></button>
                         </div>
                     </div>
@@ -755,13 +769,16 @@ const HUD: React.FC<HUDProps> = ({
                 </div>
                 ) : (
                 <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 p-2 rounded-2xl flex gap-2 shadow-2xl shadow-black/50 overflow-x-auto max-w-full">
-                {Object.entries(TOWER_STATS).map(([type, stats]) => (
-                    <button key={type} onClick={() => onSelectTower(type as TowerType)} className={`group relative min-w-[80px] p-3 rounded-xl flex flex-col items-center gap-2 transition-all duration-200 ${selectedTowerType === type && !pendingPlacement && !gameState.targetingAbility ? 'bg-slate-800 border-2 border-blue-500' : 'bg-transparent border-2 border-transparent hover:bg-slate-800/50'} ${gameState.gold < stats.cost ? 'opacity-40 grayscale' : ''}`}>
-                    <div className="w-8 h-8 rounded-full shadow-lg transition-transform group-hover:scale-110" style={{ backgroundColor: stats.color }} />
-                    <div className="flex flex-col items-center"><span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">{type}</span><div className="flex items-center gap-1 text-yellow-400 text-xs font-black bg-slate-950/50 px-2 py-0.5 rounded-full mt-1"><Coins size={10} />{stats.cost}</div></div>
-                    {selectedTowerType === type && !pendingPlacement && !gameState.targetingAbility && (<div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 w-40 bg-slate-900/95 backdrop-blur border border-slate-700 p-3 rounded-xl shadow-xl z-50 animate-in slide-in-from-bottom-2 duration-200"><h4 className="font-bold text-blue-400 text-[10px] mb-2 uppercase tracking-wider border-b border-slate-700 pb-1">Stats</h4><div className="space-y-1.5"><div className="flex justify-between text-[10px] text-slate-300"><span>DMG</span><span className="text-white">{stats.damage}</span></div><div className="flex justify-between text-[10px] text-slate-300"><span>RATE</span><span className="text-white">{stats.fireRate}/s</span></div><div className="flex justify-between text-[10px] text-slate-300"><span>RNG</span><span className="text-white">{stats.range}</span></div></div></div>)}
-                    </button>
-                ))}
+                {Object.entries(TOWER_STATS).map(([type, stats]) => {
+                    const discountCost = getTowerCost(stats.cost);
+                    return (
+                        <button key={type} onClick={() => onSelectTower(type as TowerType)} className={`group relative min-w-[80px] p-3 rounded-xl flex flex-col items-center gap-2 transition-all duration-200 ${selectedTowerType === type && !pendingPlacement && !gameState.targetingAbility ? 'bg-slate-800 border-2 border-blue-500' : 'bg-transparent border-2 border-transparent hover:bg-slate-800/50'} ${gameState.gold < discountCost ? 'opacity-40 grayscale' : ''}`}>
+                        <div className="w-8 h-8 rounded-full shadow-lg transition-transform group-hover:scale-110" style={{ backgroundColor: stats.color }} />
+                        <div className="flex flex-col items-center"><span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">{type}</span><div className="flex items-center gap-1 text-yellow-400 text-xs font-black bg-slate-950/50 px-2 py-0.5 rounded-full mt-1"><Coins size={10} />{discountCost}</div></div>
+                        {selectedTowerType === type && !pendingPlacement && !gameState.targetingAbility && (<div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 w-40 bg-slate-900/95 backdrop-blur border border-slate-700 p-3 rounded-xl shadow-xl z-50 animate-in slide-in-from-bottom-2 duration-200"><h4 className="font-bold text-blue-400 text-[10px] mb-2 uppercase tracking-wider border-b border-slate-700 pb-1">Stats</h4><div className="space-y-1.5"><div className="flex justify-between text-[10px] text-slate-300"><span>DMG</span><span className="text-white">{stats.damage}</span></div><div className="flex justify-between text-[10px] text-slate-300"><span>RATE</span><span className="text-white">{stats.fireRate}/s</span></div><div className="flex justify-between text-[10px] text-slate-300"><span>RNG</span><span className="text-white">{stats.range}</span></div></div></div>)}
+                        </button>
+                    )
+                })}
                 </div>
                 )}
             </div>

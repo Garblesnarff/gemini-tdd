@@ -322,6 +322,7 @@ export const INITIAL_META_PROGRESS: MetaProgress = {
   dataCores: 0,
   totalCoresEarned: 0,
   purchasedUpgrades: [],
+  upgradeLevels: {},
   achievements: {},
   stats: {
     totalEnemiesKilled: 0,

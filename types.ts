@@ -183,7 +183,7 @@ export enum StageId {
   STAGE_5 = 'STAGE_5'
 }
 
-export type GamePhase = 'MENU' | 'STAGE_SELECT' | 'PLAYING' | 'BOSS_INTRO' | 'BOSS_FIGHT' | 'BOSS_DEATH' | 'STAGE_COMPLETE' | 'GAME_OVER';
+export type GamePhase = 'MENU' | 'STAGE_SELECT' | 'SHOP' | 'PLAYING' | 'BOSS_INTRO' | 'BOSS_FIGHT' | 'BOSS_DEATH' | 'STAGE_COMPLETE' | 'GAME_OVER';
 
 export interface StageEnvironment {
   skyPreset: string; // 'night' | 'sunset' | 'city' | 'park' | 'forest'
@@ -227,9 +227,64 @@ export interface MetaStats {
 export interface MetaProgress {
   dataCores: number;
   totalCoresEarned: number;
-  purchasedUpgrades: string[];
+  purchasedUpgrades: string[]; // Legacy field (keeping for safety)
+  upgradeLevels: Record<string, number>; // New: Upgrade ID -> Level
   achievements: Record<string, boolean>; // id -> unlocked
   stats: MetaStats;
+}
+
+// --- META UPGRADES TYPES ---
+
+export type MetaUpgradeCategory = 'ECONOMIC' | 'DEFENSIVE' | 'OFFENSIVE' | 'TECH' | 'UNLOCKABLE';
+
+export type MetaUpgradeEffectType = 
+  | 'STARTING_GOLD' 
+  | 'STARTING_LIVES' 
+  | 'KILL_GOLD_MULT' 
+  | 'SELL_RATIO' 
+  | 'GLOBAL_DAMAGE' 
+  | 'GLOBAL_RANGE' 
+  | 'TOWER_COST_MULT' 
+  | 'CRIT_CHANCE' 
+  | 'INTEREST_RATE' 
+  | 'ABILITY_DAMAGE' 
+  | 'ABILITY_COOLDOWN' 
+  | 'ABILITY_DURATION' 
+  | 'LIFE_REGEN_WAVES'
+  | 'BOSS_RESIST';
+
+export interface MetaUpgradeEffect {
+  type: MetaUpgradeEffectType;
+  value: number;
+  techPath?: TechPath;
+}
+
+export interface MetaUpgrade {
+  id: string;
+  name: string;
+  description: string;
+  category: MetaUpgradeCategory;
+  costs: number[]; // Cost per level
+  maxLevel: number;
+  unlockCondition?: { type: 'STAGE_CLEAR' | 'STARS', stageId?: StageId, stars?: number };
+  effects: MetaUpgradeEffect[];
+}
+
+export interface AppliedMetaEffects {
+  bonusStartingGold: number;
+  bonusStartingLives: number;
+  killGoldMultiplier: number;
+  sellRatio: number;
+  globalDamageMultiplier: number;
+  globalRangeMultiplier: number;
+  towerCostMultiplier: number;
+  critChance: number;
+  interestRate: number;
+  lifeRegenWaves: number | null;
+  bossResist: number;
+  abilityDamageMultiplier: Record<TechPath, number>;
+  abilityCooldownMultiplier: Record<TechPath, number>;
+  abilityDurationMultiplier: Record<TechPath, number>;
 }
 
 export enum BossAbilityType {
@@ -342,6 +397,7 @@ export interface GameState {
   currentStage: StageId;
   stageProgress: Record<StageId, StageProgress>;
   metaProgress: MetaProgress; // Added Meta Progress to GameState
+  metaEffects: AppliedMetaEffects; // Calculated once per stage start
   activeBoss: Boss | null;
   bossAnnouncement: string | null;
   gamePhase: GamePhase;

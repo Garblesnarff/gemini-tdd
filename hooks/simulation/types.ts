@@ -1,5 +1,5 @@
 
-import { GameState, Enemy, Tower, Projectile, Effect, DamageNumber, Hazard, Augment, StageConfig, Vector3Tuple, TowerType, ActiveAbilityType } from '../../types';
+import { GameState, Enemy, Tower, Projectile, Effect, DamageNumber, Hazard, Augment, StageConfig, Vector3Tuple, TowerType, ActiveAbilityType, AppliedMetaEffects } from '../../types';
 
 export interface SimulationContext {
   state: GameState;
@@ -11,6 +11,7 @@ export interface SimulationContext {
   directorScaling: number;
   directorGoldBonus: number;
   directorCooldownMult: number;
+  metaEffects: AppliedMetaEffects; // New field
 }
 
 export type GameEvent = 

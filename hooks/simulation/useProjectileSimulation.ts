@@ -16,7 +16,7 @@ export function simulateProjectiles(projectiles: Projectile[], enemies: Enemy[],
     if (!target) {
       if (p.sourceType === TowerType.ARTILLERY) {
         // Explode at last position anyway
-        processArtilleryHit(p.position, p, enemies, newEffects, newDamageNumbers);
+        processArtilleryHit(p.position, p, enemies, newEffects, newDamageNumbers, ctx);
       }
       continue;
     }
@@ -29,11 +29,18 @@ export function simulateProjectiles(projectiles: Projectile[], enemies: Enemy[],
     if (dist < speed) {
       // Impact
       if (p.sourceType === TowerType.ARTILLERY) {
-        processArtilleryHit(target.position, p, enemies, newEffects, newDamageNumbers);
+        processArtilleryHit(target.position, p, enemies, newEffects, newDamageNumbers, ctx);
       } else {
         let damage = p.damage;
         let color = '#ef4444';
         let isBlocked = false;
+        
+        // Critical Hit Calculation
+        const isCrit = Math.random() < ctx.metaEffects.critChance;
+        if (isCrit) {
+            damage *= 2;
+            color = '#fbbf24'; // Orange/Gold for crit
+        }
 
         if (target.isBoss) {
             if (target.isShielded) {
@@ -42,6 +49,10 @@ export function simulateProjectiles(projectiles: Projectile[], enemies: Enemy[],
             } else {
                 const phase = target.bossConfig?.phases[target.currentPhase || 0];
                 if (phase) damage *= (1 - (phase.damageResistance || 0));
+                
+                // Meta Boss Resist for players (reduces damage taken by player? No, upgrade says "Reduce damage taken FROM boss abilities". 
+                // Ah, the upgrade description says "Reduce damage taken from Boss abilities/leaks". This logic is for dealing damage TO boss. 
+                // So no change here for Boss Resist meta upgrade.)
             }
         }
 
@@ -49,7 +60,15 @@ export function simulateProjectiles(projectiles: Projectile[], enemies: Enemy[],
             newEffects.push({ id: Math.random().toString(), type: 'BLOCKED', position: { ...target.position }, color: '#3b82f6', scale: 1, lifetime: 20, maxLifetime: 20, text: 'BLOCKED' });
         } else {
             target.health -= damage;
-            newDamageNumbers.push({ id: Math.random().toString(), position: { ...target.position }, value: damage, color: '#ef4444', lifetime: 30, maxLifetime: 30, isCritical: true });
+            newDamageNumbers.push({ 
+                id: Math.random().toString(), 
+                position: { ...target.position }, 
+                value: damage, 
+                color: color, 
+                lifetime: 30, 
+                maxLifetime: 30, 
+                isCritical: isCrit 
+            });
             
             // Sniper Splash Augment
             const splashAug = ctx.activeAugments.find(a => a.id === 'splash_sniper_1');
@@ -77,15 +96,21 @@ export function simulateProjectiles(projectiles: Projectile[], enemies: Enemy[],
   return { projectiles: nextProjectiles, enemies, newEffects, newDamageNumbers, events };
 }
 
-function processArtilleryHit(pos: {x:number, y:number, z:number}, p: Projectile, enemies: Enemy[], nextEffects: Effect[], nextDamageNumbers: DamageNumber[]) {
+function processArtilleryHit(pos: {x:number, y:number, z:number}, p: Projectile, enemies: Enemy[], nextEffects: Effect[], nextDamageNumbers: DamageNumber[], ctx: SimulationContext) {
   const radius = p.blastRadius || 2.5;
   nextEffects.push({ id: Math.random().toString(), type: 'EXPLOSION', position: pos, color: p.color, scale: radius, lifetime: 20, maxLifetime: 20 });
   
+  // Crits for Artillery apply to the whole blast (calculated once per hit)
+  const isCrit = Math.random() < ctx.metaEffects.critChance;
+  const damageMult = isCrit ? 2 : 1;
+  const color = isCrit ? '#fbbf24' : '#f59e0b';
+
   enemies.forEach(e => {
     const d = getDistance2D(e.position, pos);
     const hitbox = e.isBoss ? (e.bossConfig?.size || 1) * 0.5 : 0;
     if (d <= radius + hitbox) {
-      let dmg = p.damage;
+      let dmg = p.damage * damageMult;
+      
       if (e.isBoss && e.bossConfig) {
         if (e.isShielded) dmg = 0;
         else {
@@ -95,7 +120,7 @@ function processArtilleryHit(pos: {x:number, y:number, z:number}, p: Projectile,
       }
       e.health -= dmg;
       if (dmg > 0) {
-          nextDamageNumbers.push({ id: Math.random().toString(), position: { ...e.position }, value: dmg, color: '#f59e0b', lifetime: 30, maxLifetime: 30, isCritical: true });
+          nextDamageNumbers.push({ id: Math.random().toString(), position: { ...e.position }, value: dmg, color: color, lifetime: 30, maxLifetime: 30, isCritical: isCrit });
       }
     }
   });

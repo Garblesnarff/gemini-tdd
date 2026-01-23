@@ -2,6 +2,8 @@
 import { Vector3Tuple, Enemy, TargetPriority, GameState, StageId } from '../../types';
 import { STAGE_CONFIGS } from '../../constants';
 import { SimulationContext } from './types';
+import { getAppliedMetaEffects } from '../../metaUpgrades';
+import { INITIAL_META_PROGRESS } from '../../constants';
 
 export function getDistance2D(a: Vector3Tuple, b: Vector3Tuple): number {
   const dx = a.x - b.x;
@@ -58,6 +60,10 @@ export function sortByPriority(enemies: Enemy[], priority: TargetPriority): Enem
 
 export function buildSimulationContext(state: GameState, tickRate: number): SimulationContext {
   const stageConfig = STAGE_CONFIGS[state.currentStage];
+  
+  // Fallback to initial effects if undefined (migration safety)
+  const metaEffects = state.metaEffects || getAppliedMetaEffects(INITIAL_META_PROGRESS);
+
   return {
     state,
     tickDelta: tickRate * state.gameSpeed,
@@ -68,5 +74,6 @@ export function buildSimulationContext(state: GameState, tickRate: number): Simu
     directorScaling: state.directorScaling,
     directorGoldBonus: state.directorGoldBonus,
     directorCooldownMult: state.directorCooldownMult,
+    metaEffects
   };
 }

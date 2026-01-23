@@ -34,6 +34,10 @@ export function calculateTowerStats(towers: Tower[], augments: Augment[], ctx: S
     }
 
     if (nextTower.disabledTimer && nextTower.disabledTimer > 0) return nextTower;
+    
+    // --- META UPGRADE APPLICATION (Base Stats) ---
+    nextTower.damage *= ctx.metaEffects.globalDamageMultiplier;
+    nextTower.range *= ctx.metaEffects.globalRangeMultiplier;
 
     // Apply Passive Auras from nearby towers
     towers.forEach(other => {

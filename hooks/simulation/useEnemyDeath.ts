@@ -20,9 +20,10 @@ export function processEnemyDeaths(enemies: Enemy[], gold: number, stats: GameSt
         }
         nextEnemies.push(e); // Keep boss for death sequence phase
       } else {
-        // Rewards
+        // Rewards with Meta Bonus
         const baseReward = ENEMY_STATS[e.type].goldReward;
-        const reward = Math.floor(baseReward * ctx.directorGoldBonus);
+        const reward = Math.floor(baseReward * ctx.directorGoldBonus * ctx.metaEffects.killGoldMultiplier);
+        
         nextGold += reward;
         stats.enemiesKilled++;
         stats.totalGoldEarned += reward;
