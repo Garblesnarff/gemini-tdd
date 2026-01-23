@@ -363,6 +363,18 @@ const App: React.FC = () => {
                                }
                            });
                       }
+
+                      if (type === ActiveAbilityType.FREEZE) {
+                          prev.effects.push({ id: Math.random().toString(), type: 'FREEZE_WAVE', position: { ...t.position }, color: config.color, scale: config.range, lifetime: 40, maxLifetime: 40 });
+                          prev.enemies.forEach(e => {
+                              const dist = Math.sqrt(Math.pow(e.position.x - t.position.x, 2) + Math.pow(e.position.z - t.position.z, 2));
+                              if (dist <= config.range) {
+                                  e.freezeTimer = config.duration;
+                                  e.frozen = 0;
+                              }
+                          });
+                      }
+
                       return { 
                           ...t, 
                           abilityCooldown: config.cooldown * prev.directorCooldownMult, 
@@ -400,6 +412,17 @@ const App: React.FC = () => {
                        e.health -= config.damage;
                    }
                });
+          }
+
+          if (type === ActiveAbilityType.FREEZE) {
+              prev.effects.push({ id: Math.random().toString(), type: 'FREEZE_WAVE', position: { ...tower.position }, color: config.color, scale: config.range, lifetime: 40, maxLifetime: 40 });
+              prev.enemies.forEach(e => {
+                  const dist = Math.sqrt(Math.pow(e.position.x - tower.position.x, 2) + Math.pow(e.position.z - tower.position.z, 2));
+                  if (dist <= config.range) {
+                      e.freezeTimer = config.duration;
+                      e.frozen = 0;
+                  }
+              });
           }
 
           const newTowers = prev.towers.map(t => {
