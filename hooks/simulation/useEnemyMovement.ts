@@ -5,6 +5,11 @@ import { getDistance2D } from './simulationUtils';
 import { ABILITY_CONFIG } from '../../constants';
 
 export function simulateEnemyMovement(enemies: Enemy[], towers: Tower[], ctx: SimulationContext) {
+  // Freeze all movement during boss death
+  if (ctx.state.gamePhase === 'BOSS_DEATH') {
+      return { enemies, livesLost: 0 };
+  }
+
   let livesLost = 0;
   const nextEnemies: Enemy[] = [];
 

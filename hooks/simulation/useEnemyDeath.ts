@@ -13,9 +13,12 @@ export function processEnemyDeaths(enemies: Enemy[], gold: number, stats: GameSt
   enemies.forEach(e => {
     if (e.health <= 0) {
       if (e.isBoss) {
-        bossDefeated = true;
+        // Only trigger defeat if not already in death phase
+        if (ctx.state.gamePhase !== 'BOSS_DEATH') {
+            bossDefeated = true;
+            events.push({ type: 'BOSS_DEFEATED', bossId: e.id });
+        }
         nextEnemies.push(e); // Keep boss for death sequence phase
-        events.push({ type: 'BOSS_DEFEATED', bossId: e.id });
       } else {
         // Rewards
         const baseReward = ENEMY_STATS[e.type].goldReward;

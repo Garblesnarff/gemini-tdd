@@ -47,20 +47,14 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
         let activeBoss = prev.activeBoss;
         let waveStats = { ...prev.waveStats };
         let directorUpdates: Partial<GameState> = {};
+        let currentBossDeathTimer = prev.bossDeathTimer;
 
-        // BOSS_DEATH logic
+        // BOSS_DEATH logic: Decrement timer but allow loop to proceed for visuals
         if (gamePhase === 'BOSS_DEATH') {
-            const nextBossDeathTimer = prev.bossDeathTimer - gameDelta;
-            if (nextBossDeathTimer <= 0) {
-                return prev; 
-            }
-            effects = effects.filter(e => {
-                e.lifetime -= 1 * prev.gameSpeed;
-                return e.lifetime > 0;
-            });
-            // Update boss ref for death animation
+            currentBossDeathTimer -= gameDelta;
+            // Update boss ref for death animation context
             const deadBoss = enemies.find(e => e.isBoss);
-            return { ...prev, effects, bossDeathTimer: nextBossDeathTimer, activeBoss: deadBoss || null };
+            activeBoss = deadBoss || null;
         }
 
         // Supply Drop Spawning Logic
@@ -107,7 +101,7 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
         stats = deathRes.stats;
         effects.push(...deathRes.newEffects);
         if (deathRes.bossDefeated) {
-             // Handled in App.tsx via gamePhase change, but we set local flag
+             gamePhase = 'BOSS_DEATH';
         }
 
         // 7. Boss Simulation
@@ -120,10 +114,6 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
             hazards = bossRes.hazards;
             effects.push(...bossRes.newEffects);
             if (bossRes.announcement) bossAnnouncement = bossRes.announcement;
-            
-            if (deathRes.bossDefeated) {
-                gamePhase = 'BOSS_DEATH';
-            }
         }
 
         // 8. Effects Cleanup
@@ -155,7 +145,7 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
           ...prev,
           enemies, towers, projectiles, effects, damageNumbers, hazards, supplyDrops,
           gold, lives, stats, waveStatus, isGameOver, gamePhase, bossAnnouncement, waveStats,
-          bossDeathTimer: deathRes.bossDefeated ? 5000 : prev.bossDeathTimer,
+          bossDeathTimer: deathRes.bossDefeated ? 5000 : currentBossDeathTimer,
           activeBoss: updatedBoss, // Update reference
           ...directorUpdates
         };

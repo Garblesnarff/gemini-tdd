@@ -8,6 +8,11 @@ export function simulateTowerCombat(towers: Tower[], enemies: Enemy[], ctx: Simu
   const newProjectiles: Projectile[] = [];
   const newDamageNumbers: DamageNumber[] = [];
 
+  // Stop combat during boss death sequence
+  if (ctx.state.gamePhase === 'BOSS_DEATH') {
+      return { towers, newProjectiles, newDamageNumbers };
+  }
+
   towers.forEach(tower => {
     // Check if tower is ready to fire
     if (tower.cooldown <= 0 && !(tower.disabledTimer && tower.disabledTimer > 0)) {

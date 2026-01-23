@@ -1,28 +1,8 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
-
-// Initialize with strictly process.env.API_KEY as per guidelines
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+import { TACTICAL_INTEL_POOL } from './constants';
 
 export async function getWaveIntel(waveNumber: number) {
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Generate a short, tactical military-style intel briefing (max 120 characters) for Wave ${waveNumber} in a sci-fi tower defense game. Mention a potential threat or a strategic tip.`,
-      config: {
-        temperature: 0.7,
-        topP: 0.9,
-      }
-    });
-
-    return response.text?.trim() || "Enemy signatures detected. Maintain defensive formation.";
-  } catch (error: any) {
-    // Gracefully handle quota exhaustion or network errors
-    if (error.status === 429 || error.code === 429) {
-        console.warn("Intel feed offline (Quota). Switching to local tactical database.");
-    } else {
-        console.warn("Intel feed disrupted:", error.message || "Unknown Error");
-    }
-    return "Intelligence feed disrupted. Stay alert, Commander.";
-  }
+  // Select a random intel string from the pre-defined tactical pool
+  const index = Math.floor(Math.random() * TACTICAL_INTEL_POOL.length);
+  return TACTICAL_INTEL_POOL[index];
 }
