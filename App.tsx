@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
@@ -300,8 +299,9 @@ const App: React.FC = () => {
     });
     
     if (gameState.directorState === 'NEUTRAL') {
-        getWaveIntel(nextWave).then(intel => {
-            setGameState(p => ({ ...p, waveIntel: intel }));
+        const stageName = STAGE_CONFIGS[gameState.currentStage].name;
+        getWaveIntel(nextWave, stageName).then(intel => {
+            if (intel) setGameState(p => ({ ...p, waveIntel: intel }));
         });
     }
   }, [gameState.wave, gameState.waveStatus, gameState.currentStage, gameState.directorState]);
@@ -344,18 +344,20 @@ const App: React.FC = () => {
       }
   };
 
+  // Triggers ALL ready towers of a specific ability type
   const handleBatchTrigger = useCallback((type: ActiveAbilityType) => {
       if (type === ActiveAbilityType.ORBITAL_STRIKE || type === ActiveAbilityType.SINGULARITY || type === ActiveAbilityType.NAPALM) {
           setGameState(prev => ({ ...prev, targetingAbility: type }));
       } else {
           setGameState(prev => {
+              const newEffects = [...prev.effects];
               const towers = prev.towers.map(t => {
                   if (t.activeType === type && t.abilityCooldown <= 0) {
                       const config = ABILITY_CONFIG[type];
                       if (!config) return t;
 
                       if (type === ActiveAbilityType.ERUPTION) {
-                           prev.effects.push({ id: Math.random().toString(), type: 'NOVA', position: { ...t.position }, color: config.color, scale: config.range, lifetime: 40, maxLifetime: 40 });
+                           newEffects.push({ id: Math.random().toString(), type: 'NOVA', position: { ...t.position }, color: config.color, scale: config.range, lifetime: 40, maxLifetime: 40 });
                            prev.enemies.forEach(e => {
                                const dist = Math.sqrt(Math.pow(e.position.x - t.position.x, 2) + Math.pow(e.position.z - t.position.z, 2));
                                if (dist <= config.range) {
@@ -363,9 +365,9 @@ const App: React.FC = () => {
                                }
                            });
                       }
-
+                      
                       if (type === ActiveAbilityType.FREEZE) {
-                          prev.effects.push({ id: Math.random().toString(), type: 'FREEZE_WAVE', position: { ...t.position }, color: config.color, scale: config.range, lifetime: 40, maxLifetime: 40 });
+                          newEffects.push({ id: Math.random().toString(), type: 'FREEZE_WAVE', position: { ...t.position }, color: config.color, scale: config.range, lifetime: 40, maxLifetime: 40 });
                           prev.enemies.forEach(e => {
                               const dist = Math.sqrt(Math.pow(e.position.x - t.position.x, 2) + Math.pow(e.position.z - t.position.z, 2));
                               if (dist <= config.range) {
@@ -384,11 +386,12 @@ const App: React.FC = () => {
                   }
                   return t;
               });
-              return { ...prev, towers };
+              return { ...prev, towers, effects: newEffects };
           });
       }
   }, []);
 
+  // Triggers ONLY a specific tower
   const handleSingleTrigger = (towerId: string) => {
       setGameState(prev => {
           const tower = prev.towers.find(t => t.id === towerId);
@@ -404,8 +407,10 @@ const App: React.FC = () => {
           }
 
           // Immediate Abilities -> Fire just this tower
+          const newEffects = [...prev.effects];
+          
           if (type === ActiveAbilityType.ERUPTION) {
-               prev.effects.push({ id: Math.random().toString(), type: 'NOVA', position: { ...tower.position }, color: config.color, scale: config.range, lifetime: 40, maxLifetime: 40 });
+               newEffects.push({ id: Math.random().toString(), type: 'NOVA', position: { ...tower.position }, color: config.color, scale: config.range, lifetime: 40, maxLifetime: 40 });
                prev.enemies.forEach(e => {
                    const dist = Math.sqrt(Math.pow(e.position.x - tower.position.x, 2) + Math.pow(e.position.z - tower.position.z, 2));
                    if (dist <= config.range) {
@@ -415,7 +420,7 @@ const App: React.FC = () => {
           }
 
           if (type === ActiveAbilityType.FREEZE) {
-              prev.effects.push({ id: Math.random().toString(), type: 'FREEZE_WAVE', position: { ...tower.position }, color: config.color, scale: config.range, lifetime: 40, maxLifetime: 40 });
+              newEffects.push({ id: Math.random().toString(), type: 'FREEZE_WAVE', position: { ...tower.position }, color: config.color, scale: config.range, lifetime: 40, maxLifetime: 40 });
               prev.enemies.forEach(e => {
                   const dist = Math.sqrt(Math.pow(e.position.x - tower.position.x, 2) + Math.pow(e.position.z - tower.position.z, 2));
                   if (dist <= config.range) {
@@ -437,7 +442,7 @@ const App: React.FC = () => {
                return t;
           });
 
-          return { ...prev, towers: newTowers, stats: { ...prev.stats, abilitiesUsed: prev.stats.abilitiesUsed + 1 } };
+          return { ...prev, towers: newTowers, effects: newEffects, stats: { ...prev.stats, abilitiesUsed: prev.stats.abilitiesUsed + 1 } };
       });
   };
 
@@ -498,7 +503,7 @@ const App: React.FC = () => {
   useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
           if (gameState.gamePhase !== 'PLAYING' && gameState.gamePhase !== 'BOSS_FIGHT') return;
-          // Ignore if typing in an input (not currently used but good practice)
+          // Ignore if typing in an input
           if (e.target instanceof HTMLInputElement) return;
 
           switch(e.key) {
@@ -619,6 +624,8 @@ const App: React.FC = () => {
                 
                 // Determine Correct Active Ability for Tower Type + Tech Combo
                 let activeType = config.active || tower.activeType;
+                
+                // Override logic for specific classes that differ from standard path defaults
                 if (nextLevel === 3) {
                     if (path === TechPath.MAGMA) {
                         if (tower.type === TowerType.SNIPER) activeType = ActiveAbilityType.ORBITAL_STRIKE;
@@ -633,49 +640,51 @@ const App: React.FC = () => {
                         return {
                             ...t,
                             level: nextLevel,
-                            techPath: path === TechPath.NONE ? t.techPath : path,
-                            totalInvested: t.totalInvested + cost,
-                            damage: t.baseDamage * (config.damage || 1),
-                            baseDamage: t.baseDamage * (config.damage || 1),
-                            fireRate: t.baseFireRate * (config.fireRate || 1),
-                            baseFireRate: t.baseFireRate * (config.fireRate || 1),
-                            range: t.baseRange * (config.range || 1),
-                            baseRange: t.baseRange * (config.range || 1),
+                            techPath: path,
+                            damage: config.damage ? t.baseDamage * config.damage : t.damage,
+                            range: config.range ? t.baseRange * config.range : t.range,
+                            fireRate: config.fireRate ? t.baseFireRate * config.fireRate : t.fireRate,
                             passiveType: config.passive || t.passiveType,
                             activeType: activeType,
-                            abilityMaxCooldown: activeType !== ActiveAbilityType.NONE ? (ABILITY_CONFIG[activeType]?.cooldown || 0) : 0
+                            totalInvested: t.totalInvested + cost
                         };
                     }
                     return t;
                 });
-                return { ...prev, towers, gold: prev.gold - cost };
-            })
+                return { ...prev, gold: prev.gold - cost, towers };
+            });
         }}
         onDeselectTower={() => setGameState(p => ({ ...p, selectedTowerId: null }))}
         onSellTower={(id) => {
-            const t = gameState.towers.find(t => t.id === id);
-            if (t) {
-                setGameState(p => ({
-                    ...p,
-                    gold: p.gold + Math.floor(t.totalInvested * SELL_REFUND_RATIO),
-                    towers: p.towers.filter(tw => tw.id !== id),
+            setGameState(prev => {
+                const t = prev.towers.find(t => t.id === id);
+                if (!t) return prev;
+                return {
+                    ...prev,
+                    gold: prev.gold + Math.floor(t.totalInvested * SELL_REFUND_RATIO),
+                    towers: prev.towers.filter(t => t.id !== id),
                     selectedTowerId: null
-                }));
-            }
+                };
+            });
         }}
-        onSetSpeed={(s) => setGameState(p => ({ ...p, gameSpeed: s }))}
+        onSetSpeed={(speed) => setGameState(p => ({ ...p, gameSpeed: speed }))}
         onTriggerAbility={handleSingleTrigger}
         pendingPlacement={pendingPlacement}
         onConfirmPlacement={handleConfirmPlacement}
-        onCancelPlacement={() => { setPendingPlacement(null); setGameState(p => ({ ...p, targetingAbility: null })); }}
-        onUpdatePriority={(id, p) => setGameState(pr => ({ ...pr, towers: pr.towers.map(t => t.id === id ? { ...t, targetPriority: p } : t) }))}
-        onPickAugment={(aug) => {
-            setGameState(p => ({
-                ...p,
-                activeAugments: [...p.activeAugments, aug],
-                isChoosingAugment: false,
-                augmentChoices: []
+        onCancelPlacement={() => setPendingPlacement(null)}
+        onUpdatePriority={(id, priority) => {
+            setGameState(prev => ({
+                ...prev,
+                towers: prev.towers.map(t => t.id === id ? { ...t, targetPriority: priority } : t)
             }));
+        }}
+        onPickAugment={(aug) => {
+             setGameState(prev => ({
+                 ...prev,
+                 activeAugments: [...prev.activeAugments, aug],
+                 augmentChoices: [],
+                 isChoosingAugment: false
+             }));
         }}
         onBatchTrigger={handleBatchTrigger}
         onGoToMenu={() => setGameState(p => ({ ...p, gamePhase: 'MENU' }))}
@@ -683,12 +692,24 @@ const App: React.FC = () => {
         onStartStage={handleStartStage}
         canContinue={canContinue}
         onContinue={() => {
-            const data = loadGame();
-            if (data) { setGameState(p => ({ ...p, stageProgress: data.stageProgress, metaProgress: data.metaProgress, gamePhase: 'STAGE_SELECT' })); }
+            const loaded = loadGame();
+            if (loaded) {
+                setGameState(p => ({ 
+                    ...p, 
+                    stageProgress: loaded.stageProgress, 
+                    metaProgress: loaded.metaProgress,
+                    gamePhase: 'STAGE_SELECT' 
+                }));
+            }
         }}
         onNewGame={() => {
             clearSave();
-            setGameState(p => ({ ...p, stageProgress: INITIAL_STAGE_PROGRESS, metaProgress: INITIAL_META_PROGRESS, gamePhase: 'STAGE_SELECT' }));
+            setGameState(p => ({
+                ...p,
+                stageProgress: INITIAL_STAGE_PROGRESS,
+                metaProgress: INITIAL_META_PROGRESS,
+                gamePhase: 'STAGE_SELECT'
+            }));
         }}
         totalWaves={STAGE_CONFIGS[gameState.currentStage].waves}
       />
