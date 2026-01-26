@@ -33,13 +33,10 @@ export function simulateBoss(enemies: Enemy[], towers: Tower[], hazards: Hazard[
           buff.duration -= ctx.tickDelta;
           
           if (buff.type === 'REGEN') {
-              boss.health = Math.min(boss.maxHealth, boss.health + (buff.value * boss.maxHealth * ctx.tickDelta / 5000)); // distribute regen over duration
+              const val = buff.value || 0.1;
+              boss.health = Math.min(boss.maxHealth, boss.health + (val * boss.maxHealth * ctx.tickDelta / 5000));
           }
-          // Speed buff is handled in useEnemyMovement via referencing activeBuffs if we wanted, 
-          // but simpler is to set a temp speed multiplier property on the boss or modify speed directly.
-          // For now, let's assume useEnemyMovement reads a multiplier or we modify base speed.
-          // To keep it stateless in useEnemyMovement, we'll just leave it here.
-          // Note: Implementing true speed buff requires modifying useEnemyMovement to check boss.activeBuffs.
+          // Speed buff handled in movement logic implicitly or requires state update
           
           return buff.duration > 0;
       });
@@ -110,7 +107,7 @@ export function simulateBoss(enemies: Enemy[], towers: Tower[], hazards: Hazard[
       }
       else if (ability.type === BossAbilityType.REGEN) {
          if (!boss.activeBuffs) boss.activeBuffs = [];
-         boss.activeBuffs.push({ type: 'REGEN', duration: ability.duration || 5000, value: ability.value || 0.1 }); // value is total % heal
+         boss.activeBuffs.push({ type: 'REGEN', duration: ability.duration || 5000, value: ability.value || 0.1 }); 
          announcement = "REGENERATING";
          triggered = true;
       }

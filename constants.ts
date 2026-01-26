@@ -321,6 +321,12 @@ export const INITIAL_META_PROGRESS: MetaProgress = {
   purchasedUpgrades: [],
   upgradeLevels: {},
   achievements: {},
+  achievementProgress: {
+      totalBurnKills: 0,
+      totalSuppliesCollected: 0,
+      abilitiesEverUsed: [],
+      bossesDefeated: []
+  },
   stats: {
     totalEnemiesKilled: 0,
     totalGoldEarned: 0,

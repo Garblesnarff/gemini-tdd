@@ -177,7 +177,8 @@ export const getAppliedMetaEffects = (progress: MetaProgress): AppliedMetaEffect
 
         // Apply effects level times (assuming linear scaling for now)
         upgrade.effects.forEach(e => {
-            const totalValue = e.value * level;
+            if (!e) return;
+            const totalValue = (e.value || 0) * level;
 
             switch (e.type) {
                 case 'STARTING_GOLD': effects.bonusStartingGold += totalValue; break;

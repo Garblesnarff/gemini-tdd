@@ -1,6 +1,6 @@
 
 import React, { useEffect, useRef } from 'react';
-import { GameState } from '../../types';
+import { GameState, AchievementEvent } from '../../types';
 import { buildSimulationContext } from './simulationUtils';
 import { calculateTowerStats } from './useTowerStatCalculation';
 import { simulateHazards } from './useHazardSimulation';
@@ -10,6 +10,8 @@ import { simulateProjectiles } from './useProjectileSimulation';
 import { processEnemyDeaths } from './useEnemyDeath';
 import { simulateBoss } from './useBossSimulation';
 import { manageWaveState } from './useWaveManager';
+import { evaluateDirectorState } from './directorSystem';
+import { checkAchievements } from '../../achievements';
 import { DIRECTOR_CONFIG, GRID_SIZE } from '../../constants';
 
 const TICK_RATE = 50;
@@ -17,6 +19,17 @@ const TICK_RATE = 50;
 export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<React.SetStateAction<GameState>>) {
   const lastTickRef = useRef(Date.now());
   const supplyDropTimerRef = useRef(0);
+  const pauseTimerRef = useRef(0);
+  const lastTimeRef = useRef(Date.now());
+
+  useEffect(() => {
+    // Track pause time separately to handle "secret_afk"
+    const now = Date.now();
+    if (gameState.gamePhase === 'PLAYING' && gameState.gameSpeed === 0) {
+        pauseTimerRef.current += (now - lastTimeRef.current);
+    }
+    lastTimeRef.current = now;
+  });
 
   useEffect(() => {
     if (gameState.gamePhase !== 'PLAYING' && 
@@ -26,10 +39,17 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
 
     const interval = setInterval(() => {
       setGameState(prev => {
-        if (prev.gameSpeed === 0) return prev;
+        if (prev.gameSpeed === 0) {
+            // Only update stats for pause duration while paused
+            return { 
+                ...prev, 
+                stats: { ...prev.stats, pauseDuration: prev.stats.pauseDuration + TICK_RATE } 
+            };
+        }
         
         const ctx = buildSimulationContext(prev, TICK_RATE);
         const gameDelta = ctx.tickDelta;
+        const achievementEvents: AchievementEvent[] = [];
 
         // Clone state for mutation
         let enemies = [...prev.enemies];
@@ -49,10 +69,9 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
         let directorUpdates: Partial<GameState> = {};
         let currentBossDeathTimer = prev.bossDeathTimer;
 
-        // BOSS_DEATH logic: Decrement timer but allow loop to proceed for visuals
+        // BOSS_DEATH logic
         if (gamePhase === 'BOSS_DEATH') {
             currentBossDeathTimer -= gameDelta;
-            // Update boss ref for death animation context
             const deadBoss = enemies.find(e => e.isBoss);
             activeBoss = deadBoss || null;
         }
@@ -63,17 +82,14 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
             return sd.lifetime > 0;
         });
 
-        // Periodic Supply Drop Spawning (Director RELIEF state)
+        // Periodic Supply Drop Spawning
         if ((prev.waveStatus === 'SPAWNING' || prev.waveStatus === 'CLEARING') && prev.directorState === 'RELIEF') {
             supplyDropTimerRef.current += gameDelta;
-            // Spawn approx every 9 seconds
             if (supplyDropTimerRef.current >= 9000) {
                 if (supplyDrops.length < 3) {
                     const val = Math.floor(Math.random() * (DIRECTOR_CONFIG.SUPPLY_DROP_VALUE.MAX - DIRECTOR_CONFIG.SUPPLY_DROP_VALUE.MIN)) + DIRECTOR_CONFIG.SUPPLY_DROP_VALUE.MIN;
-                    // Random position logic matches App.tsx
                     const x = Math.floor((Math.random() - 0.5) * GRID_SIZE * 1.5);
                     const z = Math.floor((Math.random() - 0.5) * GRID_SIZE * 1.5);
-                    
                     supplyDrops.push({
                         id: `drop_${Date.now()}_${Math.random()}`,
                         position: { x, y: 0, z },
@@ -88,49 +104,62 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
             supplyDropTimerRef.current = 0;
         }
 
-        // 1. Tower Stats Calculation
+        // 1. Tower Stats
         towers = calculateTowerStats(towers, prev.activeAugments, ctx);
 
-        // 2. Hazards Simulation
+        // 2. Hazards
         const hazRes = simulateHazards(hazards, enemies, ctx);
         hazards = hazRes.hazards;
         enemies = hazRes.enemies;
 
-        // 3. Enemy Movement
-        // This creates NEW enemy objects, breaking references to 'activeBoss'
+        // 3. Movement
         const moveRes = simulateEnemyMovement(enemies, towers, ctx);
         enemies = moveRes.enemies;
-        lives -= moveRes.livesLost;
-        
         if (moveRes.livesLost > 0) {
-            waveStats.livesLostThisWave += moveRes.livesLost;
+            lives -= moveRes.livesLost;
+            stats.livesLostThisRun += moveRes.livesLost;
+            stats.livesLostThisWave += moveRes.livesLost;
+            stats.waveStreakNoLoss = 0;
         }
 
-        // 4. Tower Combat
+        // 4. Combat
         const combatRes = simulateTowerCombat(towers, enemies, ctx);
         towers = combatRes.towers;
         projectiles.push(...combatRes.newProjectiles);
-        damageNumbers.push(...combatRes.newDamageNumbers); // Capture hitscan damage
-
+        damageNumbers.push(...combatRes.newDamageNumbers);
+        
         // 5. Projectiles
         const projRes = simulateProjectiles(projectiles, enemies, ctx);
         projectiles = projRes.projectiles;
         enemies = projRes.enemies;
         effects.push(...projRes.newEffects);
         damageNumbers.push(...projRes.newDamageNumbers);
+        // Map projectile events if needed, for now mainly kill events matter in step 6
 
-        // 6. Enemy Death
+        // 6. Deaths
         const deathRes = processEnemyDeaths(enemies, gold, stats, ctx);
         enemies = deathRes.enemies;
         gold = deathRes.gold;
         stats = deathRes.stats;
         effects.push(...deathRes.newEffects);
-        if (deathRes.bossDefeated) {
-             gamePhase = 'BOSS_DEATH';
-        }
+        
+        deathRes.events.forEach(e => {
+            if (e.type === 'ENEMY_KILLED') {
+                achievementEvents.push({ 
+                    type: 'ENEMY_KILLED', 
+                    enemyType: e.enemyType as any, 
+                    damage: 0, 
+                    overkill: 0, 
+                    source: 'TOWER' // Simplified source tracking, implies tower for now
+                });
+            }
+            if (e.type === 'BOSS_DEFEATED') {
+                gamePhase = 'BOSS_DEATH';
+                achievementEvents.push({ type: 'BOSS_KILLED', bossId: e.bossId });
+            }
+        });
 
-        // 7. Boss Simulation
-        // We must re-find the boss in the updated 'enemies' array to ensure we are simulating the current state
+        // 7. Boss
         const currentBossRef = enemies.find(e => e.isBoss);
         if (currentBossRef) {
             const bossRes = simulateBoss(enemies, towers, hazards, ctx);
@@ -141,21 +170,25 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
             if (bossRes.announcement) bossAnnouncement = bossRes.announcement;
         }
 
-        // 8. Effects Cleanup
-        effects = effects.filter(e => {
-            e.lifetime -= 1 * prev.gameSpeed;
-            return e.lifetime > 0;
-        });
-        damageNumbers = damageNumbers.filter(dn => {
-            dn.lifetime -= 1 * prev.gameSpeed;
-            return dn.lifetime > 0;
-        });
+        // 8. Cleanup
+        effects = effects.filter(e => { e.lifetime -= 1 * prev.gameSpeed; return e.lifetime > 0; });
+        damageNumbers = damageNumbers.filter(dn => { dn.lifetime -= 1 * prev.gameSpeed; return dn.lifetime > 0; });
 
         // 9. Wave Manager
         const waveRes = manageWaveState(enemies, prev.waveStatus, lives, gold, ctx);
         const waveStatus = waveRes.waveStatus;
         gold = waveRes.gold;
         directorUpdates = waveRes.directorUpdates || {};
+        
+        waveRes.events.forEach(e => {
+            if (e.type === 'WAVE_COMPLETE') {
+                achievementEvents.push({ 
+                    type: 'WAVE_COMPLETE', 
+                    waveNumber: e.waveNumber, 
+                    livesLost: waveStats.livesLostThisWave 
+                });
+            }
+        });
 
         let isGameOver = prev.isGameOver;
         if (lives <= 0) {
@@ -163,7 +196,13 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
             gamePhase = 'GAME_OVER';
         }
 
-        // CRITICAL: Find the updated boss object to store in state, so HUD reflects damage
+        // 10. Achievements
+        achievementEvents.push({ type: 'GAME_TICK' });
+        const { unlocked, updatedMeta } = checkAchievements(achievementEvents, { ...prev, gold, lives, stats, towers }, prev.metaProgress);
+        
+        const newToasts = unlocked.map(ach => ({ achievement: ach, timestamp: Date.now() }));
+
+        // Update Boss Ref
         const updatedBoss = enemies.find(e => e.isBoss) || null;
 
         return {
@@ -171,8 +210,10 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
           enemies, towers, projectiles, effects, damageNumbers, hazards, supplyDrops,
           gold, lives, stats, waveStatus, isGameOver, gamePhase, bossAnnouncement, waveStats,
           bossDeathTimer: deathRes.bossDefeated ? 5000 : currentBossDeathTimer,
-          activeBoss: updatedBoss, // Update reference
-          ...directorUpdates
+          activeBoss: updatedBoss,
+          ...directorUpdates,
+          metaProgress: updatedMeta,
+          achievementToastQueue: [...prev.achievementToastQueue, ...newToasts]
         };
       });
     }, TICK_RATE);

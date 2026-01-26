@@ -246,6 +246,41 @@ export interface StageProgress {
   stars: 0 | 1 | 2 | 3;
 }
 
+// --- ACHIEVEMENTS ---
+
+export type AchievementCategory = 'CAMPAIGN' | 'MASTERY' | 'ARSENAL' | 'EXTERMINATION' | 'ECONOMIC' | 'CHALLENGE' | 'SECRET';
+
+export interface Achievement {
+  id: string;
+  name: string;
+  description: string;
+  hiddenDescription?: string;
+  category: AchievementCategory;
+  reward: number; // Data Cores
+  isSecret?: boolean;
+}
+
+export interface AchievementProgress {
+  totalBurnKills: number;
+  totalSuppliesCollected: number;
+  abilitiesEverUsed: string[];
+  bossesDefeated: string[];
+}
+
+export type AchievementEvent = 
+  | { type: 'ENEMY_KILLED'; enemyType: EnemyType; damage: number; overkill: number; source: 'TOWER' | 'ABILITY' | 'BURN' }
+  | { type: 'BOSS_KILLED'; bossId: string }
+  | { type: 'TOWER_PLACED'; towerType: TowerType }
+  | { type: 'TOWER_UPGRADED'; towerId: string; newLevel: number; techPath: TechPath }
+  | { type: 'TOWER_SOLD'; towerId: string }
+  | { type: 'ABILITY_USED'; abilityType: ActiveAbilityType; kills: number }
+  | { type: 'WAVE_COMPLETE'; waveNumber: number; livesLost: number }
+  | { type: 'STAGE_COMPLETE'; stageId: StageId; finalLives: number; finalGold: number; stats: GameStats }
+  | { type: 'SUPPLY_COLLECTED' }
+  | { type: 'AUGMENT_PICKED' }
+  | { type: 'DIRECTOR_STATE_CHANGED'; newState: 'NEUTRAL' | 'PRESSURE' | 'RELIEF' }
+  | { type: 'GAME_TICK' }; 
+
 // --- META PROGRESSION ---
 
 export interface MetaStats {
@@ -261,6 +296,7 @@ export interface MetaProgress {
   purchasedUpgrades: string[]; // Legacy field (keeping for safety)
   upgradeLevels: Record<string, number>; // New: Upgrade ID -> Level
   achievements: Record<string, boolean>; // id -> unlocked
+  achievementProgress: AchievementProgress;
   stats: MetaStats;
 }
 
@@ -398,6 +434,24 @@ export interface GameStats {
   abilitiesUsed: number;
   enemiesKilled: number; 
   coresEarned?: number; 
+  
+  // New Tracking for Achievements
+  towersSold: number;
+  livesLostThisRun: number;
+  livesLostThisWave: number;
+  waveStreakNoLoss: number;
+  towersBuiltByType: Record<string, number>;
+  abilitiesUsedThisRun: string[]; 
+  interestEarnedThisRun: number;
+  suppliesCollectedThisRun: number;
+  experiencedDirectorPressure: boolean;
+  experiencedDirectorRelief: boolean;
+  augmentsSkipped: number;
+  damageByTowerToBoss: Record<string, number>;
+  bossSpawnTime: number;
+  resetsThisSession: number;
+  wavesOn2xSpeed: number;
+  pauseDuration: number;
 }
 
 export type DirectorState = 'NEUTRAL' | 'PRESSURE' | 'RELIEF';
@@ -449,4 +503,6 @@ export interface GameState {
   directorScaling: number;
   directorGoldBonus: number;
   directorCooldownMult: number;
+  
+  achievementToastQueue: { achievement: Achievement; timestamp: number }[];
 }

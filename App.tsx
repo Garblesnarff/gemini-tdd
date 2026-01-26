@@ -8,6 +8,8 @@ import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_RE
 import HUD from './components/HUD';
 import Scene from './components/Scene';
 import MetaShop from './components/MetaShop';
+import AchievementsPanel from './components/AchievementsPanel';
+import AchievementToast from './components/AchievementToast';
 import { saveGame, loadGame, clearSave, hasSaveData } from './saveSystem';
 import { getWaveIntel } from './geminiService';
 import { useGameLoop } from './hooks/simulation/useGameLoop';
@@ -47,7 +49,23 @@ const App: React.FC = () => {
         totalGoldEarned: 0,
         towersBuilt: 0,
         abilitiesUsed: 0,
-        enemiesKilled: 0
+        enemiesKilled: 0,
+        towersSold: 0,
+        livesLostThisRun: 0,
+        livesLostThisWave: 0,
+        waveStreakNoLoss: 0,
+        towersBuiltByType: {},
+        abilitiesUsedThisRun: [],
+        interestEarnedThisRun: 0,
+        suppliesCollectedThisRun: 0,
+        experiencedDirectorPressure: false,
+        experiencedDirectorRelief: false,
+        augmentsSkipped: 0,
+        damageByTowerToBoss: {},
+        bossSpawnTime: 0,
+        resetsThisSession: 0,
+        wavesOn2xSpeed: 0,
+        pauseDuration: 0
     },
     bossDeathTimer: 0,
     directorState: 'NEUTRAL',
@@ -61,12 +79,14 @@ const App: React.FC = () => {
     directorAction: 'NONE',
     directorScaling: 1,
     directorGoldBonus: 1,
-    directorCooldownMult: 1
+    directorCooldownMult: 1,
+    achievementToastQueue: []
   });
 
   const [selectedTowerType, setSelectedTowerType] = useState<TowerType>(TowerType.BASIC);
   const [pendingPlacement, setPendingPlacement] = useState<Vector3Tuple | null>(null);
   const [canContinue, setCanContinue] = useState(false);
+  const [showAchievements, setShowAchievements] = useState(false);
   
   const spawnQueueRef = useRef<{time: number, type: EnemyType, pathIndex: number, isElite?: boolean}[]>([]);
   const waveTimerRef = useRef(0);
@@ -347,7 +367,14 @@ const App: React.FC = () => {
               ...prev,
               gold: prev.gold - cost,
               towers: [...prev.towers, newTower],
-              stats: { ...prev.stats, towersBuilt: prev.stats.towersBuilt + 1 }
+              stats: { 
+                  ...prev.stats, 
+                  towersBuilt: prev.stats.towersBuilt + 1,
+                  towersBuiltByType: {
+                      ...prev.stats.towersBuiltByType,
+                      [selectedTowerType]: (prev.stats.towersBuiltByType[selectedTowerType] || 0) + 1
+                  }
+              }
           }));
           setPendingPlacement(null);
       }
@@ -384,11 +411,6 @@ const App: React.FC = () => {
           // ORBITAL, NAPALM, SINGULARITY
           if (type === ActiveAbilityType.ORBITAL_STRIKE) {
               newEffects.push({ id: Math.random().toString(), type: 'ORBITAL_STRIKE', position: targetPos, color: config.color, scale: config.range || 4, lifetime: 60, maxLifetime: 60 });
-              // Logic applied in timeout elsewhere or directly here? 
-              // To handle delay, we usually use a timeout in logic or effect logic.
-              // For simplicity, damage applies instantly in this MVP iteration or handled in simulationUtils if strict.
-              // Let's apply instant for responsiveness, or use a delayed effect queue.
-              // Applying instantly:
               prev.enemies.forEach(e => {
                   const d = Math.sqrt(Math.pow(e.position.x - targetPos.x, 2) + Math.pow(e.position.z - targetPos.z, 2));
                   if (d <= (config.range || 4)) e.health -= (config.damage || 0);
@@ -519,30 +541,12 @@ const App: React.FC = () => {
       });
   };
 
-  // Keyboard Hotkeys
-  useEffect(() => {
-      const handleKeyDown = (e: KeyboardEvent) => {
-          if (gameState.gamePhase !== 'PLAYING' && gameState.gamePhase !== 'BOSS_FIGHT') return;
-          if (e.target instanceof HTMLInputElement) return;
-
-          // Hotkey Mapping: 1=Magma, 2=Plasma, 3=Void, 4=Ult? 
-          // The matrix defines groups. Let's map somewhat logically.
-          // Or just standard numeric mapping for slots in hotbar.
-          // Since HUD hotbar is grouped by Effect Type now (Damage, Rate, Control), 
-          // let's assume HUD logic handles the specific types.
-          // We will update HUD to pass type.
-      };
-      // window.addEventListener('keydown', handleKeyDown);
-      return () => { // window.removeEventListener('keydown', handleKeyDown); 
-      };
-  }, []);
-
   const handleStartStage = (id: StageId) => {
       const config = STAGE_CONFIGS[id];
       const effects = getAppliedMetaEffects(gameState.metaProgress);
 
-      setGameState({
-          ...gameState,
+      setGameState(prev => ({
+          ...prev,
           currentStage: id,
           gold: config.startingGold + effects.bonusStartingGold,
           lives: config.startingLives + effects.bonusStartingLives,
@@ -560,7 +564,31 @@ const App: React.FC = () => {
           activeBoss: null,
           bossAnnouncement: null,
           isChoosingAugment: false,
-          stats: { ...INITIAL_META_PROGRESS.stats, startTime: Date.now(), totalGoldEarned: 0, towersBuilt: 0, abilitiesUsed: 0, enemiesKilled: 0 },
+          stats: { 
+              ...INITIAL_META_PROGRESS.stats, 
+              startTime: Date.now(), 
+              totalGoldEarned: 0, 
+              towersBuilt: 0, 
+              abilitiesUsed: 0, 
+              enemiesKilled: 0,
+              // Reset run specific stats
+              towersSold: 0,
+              livesLostThisRun: 0,
+              livesLostThisWave: 0,
+              waveStreakNoLoss: 0,
+              towersBuiltByType: {},
+              abilitiesUsedThisRun: [],
+              interestEarnedThisRun: 0,
+              suppliesCollectedThisRun: 0,
+              experiencedDirectorPressure: false,
+              experiencedDirectorRelief: false,
+              augmentsSkipped: 0,
+              damageByTowerToBoss: {},
+              bossSpawnTime: 0,
+              resetsThisSession: prev.stats.resetsThisSession + 1,
+              wavesOn2xSpeed: 0,
+              pauseDuration: 0
+          },
           directorState: 'NEUTRAL',
           directorStreak: 0,
           pendingDirectorState: undefined,
@@ -569,7 +597,7 @@ const App: React.FC = () => {
           directorCooldownMult: 1,
           directorAction: 'NONE',
           waveStats: { livesLostThisWave: 0, waveStartTime: 0, waveEndTime: 0, consecutiveCleanWaves: 0 }
-      });
+      }));
   };
   
   const handleCollectSupplyDrop = (id: string) => {
@@ -589,7 +617,11 @@ const App: React.FC = () => {
                   lifetime: 40,
                   maxLifetime: 40,
                   isCritical: true
-              }]
+              }],
+              stats: {
+                  ...prev.stats,
+                  suppliesCollectedThisRun: prev.stats.suppliesCollectedThisRun + 1
+              }
           };
       });
   };
@@ -627,11 +659,34 @@ const App: React.FC = () => {
         <OrbitControls minPolarAngle={Math.PI / 4} maxPolarAngle={Math.PI / 2.5} minDistance={10} maxDistance={40} />
       </Canvas>
       
+      {/* Toast Notifications */}
+      <div className="fixed top-24 right-4 z-50 flex flex-col items-end pointer-events-none">
+          {gameState.achievementToastQueue.map((item) => (
+              <AchievementToast 
+                key={`${item.achievement.id}_${item.timestamp}`} 
+                achievement={item.achievement} 
+                onDismiss={() => {
+                    setGameState(prev => ({
+                        ...prev,
+                        achievementToastQueue: prev.achievementToastQueue.filter(t => t.timestamp !== item.timestamp)
+                    }));
+                }} 
+              />
+          ))}
+      </div>
+
       {gameState.gamePhase === 'SHOP' && (
           <MetaShop 
               metaProgress={gameState.metaProgress} 
               onPurchase={handleBuyMetaUpgrade}
               onBack={() => setGameState(p => ({ ...p, gamePhase: 'STAGE_SELECT' }))}
+          />
+      )}
+
+      {showAchievements && (
+          <AchievementsPanel 
+              metaProgress={gameState.metaProgress} 
+              onBack={() => setShowAchievements(false)} 
           />
       )}
       
@@ -645,17 +700,16 @@ const App: React.FC = () => {
             setGameState(prev => {
                 const tower = prev.towers.find(t => t.id === id);
                 if (!tower) return prev;
-                const nextLevel = tower.level + 1;
                 // @ts-ignore
-                const cost = UPGRADE_CONFIG.costs[nextLevel];
+                const cost = UPGRADE_CONFIG.costs[tower.level + 1];
                 if (prev.gold < cost) return prev;
 
-                const config = UPGRADE_CONFIG.paths[path]?.[nextLevel];
+                const config = UPGRADE_CONFIG.paths[path]?.[tower.level + 1];
                 if (!config) return prev;
                 
                 // Determine Correct Active Ability from Matrix
                 let activeType = tower.activeType;
-                if (nextLevel === 3) {
+                if (tower.level + 1 === 3) {
                     const abilityConfig = ABILITY_MATRIX[tower.type][path];
                     if (abilityConfig) activeType = abilityConfig.id as ActiveAbilityType;
                 }
@@ -664,7 +718,7 @@ const App: React.FC = () => {
                     if (t.id === id) {
                         return {
                             ...t,
-                            level: nextLevel,
+                            level: t.level + 1,
                             techPath: path,
                             damage: config.damage ? t.baseDamage * config.damage : t.damage,
                             range: config.range ? t.baseRange * config.range : t.range,
@@ -689,7 +743,8 @@ const App: React.FC = () => {
                     ...prev,
                     gold: prev.gold + Math.floor(t.totalInvested * sellRatio),
                     towers: prev.towers.filter(t => t.id !== id),
-                    selectedTowerId: null
+                    selectedTowerId: null,
+                    stats: { ...prev.stats, towersSold: prev.stats.towersSold + 1 }
                 };
             });
         }}
@@ -740,6 +795,7 @@ const App: React.FC = () => {
         }}
         totalWaves={STAGE_CONFIGS[gameState.currentStage].waves}
         onOpenShop={() => setGameState(p => ({ ...p, gamePhase: 'SHOP' }))}
+        onOpenAchievements={() => setShowAchievements(true)}
       />
     </>
   );

@@ -92,6 +92,7 @@ export function calculateTowerStats(towers: Tower[], augments: Augment[], ctx: S
 
     // Apply Global Augments
     augments.forEach(aug => {
+      if (!aug) return;
       const e = aug.effect;
       if (!e) return;
       
