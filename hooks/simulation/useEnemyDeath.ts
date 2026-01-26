@@ -55,7 +55,8 @@ export function processEnemyDeaths(enemies: Enemy[], gold: number, stats: GameSt
               },
               pathId: e.pathId,
               waypointIndex: e.waypointIndex,
-              progress: e.progress
+              progress: e.progress,
+              debuffs: []
             });
           }
           newEffects.push({ id: Math.random().toString(), type: 'NOVA', position: e.position, color: '#14b8a6', scale: 2, lifetime: 30, maxLifetime: 30 });

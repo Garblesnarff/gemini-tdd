@@ -4,7 +4,7 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { GameState, Enemy, Tower, Projectile, Effect, DamageNumber, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType, StageId, Boss, BossAbilityType, DirectorActionType, Hazard, MetaProgress, SupplyDrop } from './types';
-import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_CONFIG, AUGMENT_POOL, STAGE_CONFIGS, getWaveDefinition, INITIAL_STAGE_PROGRESS, INITIAL_META_PROGRESS, TECH_PATH_INFO, TACTICAL_INTEL_POOL, STAGE_CORE_REWARDS, DIRECTOR_CONFIG } from './constants';
+import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_MATRIX, AUGMENT_POOL, STAGE_CONFIGS, getWaveDefinition, INITIAL_STAGE_PROGRESS, INITIAL_META_PROGRESS, TECH_PATH_INFO, TACTICAL_INTEL_POOL, STAGE_CORE_REWARDS, DIRECTOR_CONFIG } from './constants';
 import HUD from './components/HUD';
 import Scene from './components/Scene';
 import MetaShop from './components/MetaShop';
@@ -37,7 +37,7 @@ const App: React.FC = () => {
     currentStage: StageId.STAGE_1,
     stageProgress: INITIAL_STAGE_PROGRESS,
     metaProgress: INITIAL_META_PROGRESS,
-    metaEffects: getAppliedMetaEffects(INITIAL_META_PROGRESS), // Init defaults
+    metaEffects: getAppliedMetaEffects(INITIAL_META_PROGRESS),
     activeBoss: null,
     bossAnnouncement: null,
     gamePhase: 'MENU',
@@ -89,14 +89,13 @@ const App: React.FC = () => {
   // Use modularized game loop
   useGameLoop(gameState, setGameState);
 
-  // Handle Stage Completion & Spawning (Higher level orchestration)
+  // Handle Stage Completion & Spawning
   useEffect(() => {
     if (gameState.gamePhase !== 'PLAYING' && gameState.gamePhase !== 'BOSS_FIGHT' && gameState.gamePhase !== 'BOSS_DEATH') return;
     
     const interval = setInterval(() => {
         setGameState(prev => {
             if (prev.gamePhase === 'BOSS_DEATH' && prev.bossDeathTimer <= 0) {
-                 // Transition to COMPLETE STAGE
                  const nextStageProgress = { ...prev.stageProgress };
                  const nextMetaProgress = { ...prev.metaProgress };
                  const nextStats = { ...prev.stats };
@@ -187,7 +186,8 @@ const App: React.FC = () => {
                                 currentPhase: 0,
                                 abilityCooldowns: {},
                                 isShielded: false,
-                                triggeredSpawnIndices: []
+                                triggeredSpawnIndices: [],
+                                debuffs: []
                             };
                             nextEnemies.push(boss);
                             nextActiveBoss = boss;
@@ -205,7 +205,8 @@ const App: React.FC = () => {
                                 pathId: spawnEvent.pathIndex,
                                 waypointIndex: 0,
                                 progress: 0,
-                                isElite: isElite
+                                isElite: isElite,
+                                debuffs: []
                             });
                         }
                     }
@@ -316,7 +317,6 @@ const App: React.FC = () => {
       if (!pendingPlacement) return;
       
       const stats = TOWER_STATS[selectedTowerType];
-      // Apply Meta Shop Discount
       const cost = Math.floor(stats.cost * gameState.metaEffects.towerCostMultiplier);
 
       if (gameState.gold >= cost) {
@@ -340,7 +340,8 @@ const App: React.FC = () => {
               abilityCooldown: 0,
               abilityMaxCooldown: 0,
               abilityDuration: 0,
-              targetPriority: TargetPriority.FIRST
+              targetPriority: TargetPriority.FIRST,
+              activeBuffs: []
           };
           setGameState(prev => ({
               ...prev,
@@ -352,158 +353,169 @@ const App: React.FC = () => {
       }
   };
 
-  // Triggers ALL ready towers of a specific ability type
-  const handleBatchTrigger = useCallback((type: ActiveAbilityType) => {
-      if (type === ActiveAbilityType.ORBITAL_STRIKE || type === ActiveAbilityType.SINGULARITY || type === ActiveAbilityType.NAPALM) {
-          setGameState(prev => ({ ...prev, targetingAbility: type }));
-      } else {
-          setGameState(prev => {
-              const newEffects = [...prev.effects];
-              const towers = prev.towers.map(t => {
-                  if (t.activeType === type && t.abilityCooldown <= 0) {
-                      const config = ABILITY_CONFIG[type];
-                      if (!config) return t;
+  const executeAbility = (prev: GameState, tower: Tower, type: ActiveAbilityType, targetPos?: Vector3Tuple): { newEffects: Effect[], newHazards: Hazard[], modifiedTower: Tower } => {
+      const config = ABILITY_MATRIX[tower.type][tower.techPath];
+      if (!config) return { newEffects: [], newHazards: [], modifiedTower: tower };
 
-                      if (type === ActiveAbilityType.ERUPTION) {
-                           newEffects.push({ id: Math.random().toString(), type: 'NOVA', position: { ...t.position }, color: config.color, scale: config.range, lifetime: 40, maxLifetime: 40 });
-                           prev.enemies.forEach(e => {
-                               const dist = Math.sqrt(Math.pow(e.position.x - t.position.x, 2) + Math.pow(e.position.z - t.position.z, 2));
-                               if (dist <= config.range) {
-                                   e.health -= config.damage;
-                               }
-                           });
-                      }
-                      
-                      if (type === ActiveAbilityType.FREEZE) {
-                          newEffects.push({ id: Math.random().toString(), type: 'FREEZE_WAVE', position: { ...t.position }, color: config.color, scale: config.range, lifetime: 40, maxLifetime: 40 });
-                          prev.enemies.forEach(e => {
-                              const dist = Math.sqrt(Math.pow(e.position.x - t.position.x, 2) + Math.pow(e.position.z - t.position.z, 2));
-                              if (dist <= config.range) {
-                                  e.freezeTimer = config.duration;
-                                  e.frozen = 0;
-                              }
-                          });
-                      }
+      const newEffects: Effect[] = [];
+      const newHazards: Hazard[] = [];
+      let modTower = { ...tower };
 
-                      return { 
-                          ...t, 
-                          abilityCooldown: config.cooldown * prev.directorCooldownMult, 
-                          abilityMaxCooldown: config.cooldown * prev.directorCooldownMult,
-                          abilityDuration: config.duration || 0
-                      };
-                  }
-                  return t;
-              });
-              return { ...prev, towers, effects: newEffects };
+      modTower.abilityCooldown = config.cooldown * prev.directorCooldownMult;
+      modTower.abilityMaxCooldown = config.cooldown * prev.directorCooldownMult;
+
+      if (config.type === 'INSTANT_AOE') {
+          // ERUPTION or TEMPORAL_ANCHOR
+          const effectType = type === ActiveAbilityType.TEMPORAL_ANCHOR ? 'FREEZE_WAVE' : 'NOVA';
+          newEffects.push({ id: Math.random().toString(), type: effectType, position: { ...tower.position }, color: config.color, scale: config.range || 5, lifetime: 40, maxLifetime: 40 });
+          
+          prev.enemies.forEach(e => {
+             const dist = Math.sqrt(Math.pow(e.position.x - tower.position.x, 2) + Math.pow(e.position.z - tower.position.z, 2));
+             if (dist <= (config.range || 5)) {
+                 if (type === ActiveAbilityType.ERUPTION) e.health -= (config.damage || 0);
+                 if (type === ActiveAbilityType.TEMPORAL_ANCHOR) {
+                     e.freezeTimer = config.duration;
+                     e.frozen = 0;
+                 }
+             }
           });
       }
+      else if (config.type === 'TARGETED_AOE' && targetPos) {
+          // ORBITAL, NAPALM, SINGULARITY
+          if (type === ActiveAbilityType.ORBITAL_STRIKE) {
+              newEffects.push({ id: Math.random().toString(), type: 'ORBITAL_STRIKE', position: targetPos, color: config.color, scale: config.range || 4, lifetime: 60, maxLifetime: 60 });
+              // Logic applied in timeout elsewhere or directly here? 
+              // To handle delay, we usually use a timeout in logic or effect logic.
+              // For simplicity, damage applies instantly in this MVP iteration or handled in simulationUtils if strict.
+              // Let's apply instant for responsiveness, or use a delayed effect queue.
+              // Applying instantly:
+              prev.enemies.forEach(e => {
+                  const d = Math.sqrt(Math.pow(e.position.x - targetPos.x, 2) + Math.pow(e.position.z - targetPos.z, 2));
+                  if (d <= (config.range || 4)) e.health -= (config.damage || 0);
+              });
+          }
+          else if (type === ActiveAbilityType.NAPALM || type === ActiveAbilityType.SINGULARITY) {
+               newHazards.push({
+                   id: Math.random().toString(),
+                   type: type === ActiveAbilityType.NAPALM ? 'NAPALM' : 'SINGULARITY',
+                   position: targetPos,
+                   radius: config.range || 4,
+                   duration: config.duration || 5000,
+                   value: config.value || config.damage || 0,
+                   color: config.color
+               });
+          }
+      }
+      else if (config.type === 'SELF_BUFF' || config.type === 'PROJECTILE_MOD' || config.type === 'DEBUFF' || config.type === 'ZONE') {
+          // OVERCLOCK, BARRAGE, PERFORATION, CHAIN_LIGHTNING, IGNITION, VOID_MARK, ENTROPY_FIELD
+          if (!modTower.activeBuffs) modTower.activeBuffs = [];
+          
+          let buffType = type as string; 
+          // Map to buff keys used in logic
+          if (type === ActiveAbilityType.IGNITION_BURST) buffType = 'IGNITION';
+          
+          modTower.activeBuffs.push({
+              type: buffType as any,
+              duration: config.duration,
+              stacks: type === ActiveAbilityType.IGNITION_BURST ? 30 : undefined
+          });
+          
+          // Special immediate logic for Entropy Field (Zone)
+          if (type === ActiveAbilityType.ENTROPY_FIELD) {
+              newEffects.push({ id: Math.random().toString(), type: 'NOVA', position: tower.position, color: config.color, scale: config.range || 3, lifetime: 20, maxLifetime: 20 });
+          }
+          if (type === ActiveAbilityType.VOID_MARK) {
+              modTower.activeBuffs.push({ type: 'VOID_MARK_READY' }); // consumed on next shot
+          }
+      }
+
+      return { newEffects, newHazards, modifiedTower: modTower };
+  };
+
+  const handleBatchTrigger = useCallback((type: ActiveAbilityType) => {
+      setGameState(prev => {
+          // Targeted?
+          const configSample = Object.values(ABILITY_MATRIX).find(t => t[TechPath.MAGMA]?.id === type || t[TechPath.PLASMA]?.id === type || t[TechPath.VOID]?.id === type);
+          // Just find the config from one of the towers.
+          // Better: Check if any tower with this ability requires targeting.
+          const needsTarget = prev.towers.some(t => {
+              const cfg = ABILITY_MATRIX[t.type][t.techPath];
+              return cfg?.id === type && cfg.requiresTargeting;
+          });
+
+          if (needsTarget) {
+              return { ...prev, targetingAbility: type };
+          }
+
+          const newEffects: Effect[] = [...prev.effects];
+          const newHazards: Hazard[] = [...prev.hazards];
+          const newTowers = prev.towers.map(t => {
+              const cfg = ABILITY_MATRIX[t.type][t.techPath];
+              if (cfg?.id === type && t.abilityCooldown <= 0) {
+                  const res = executeAbility(prev, t, type);
+                  newEffects.push(...res.newEffects);
+                  newHazards.push(...res.newHazards);
+                  return res.modifiedTower;
+              }
+              return t;
+          });
+
+          return { ...prev, towers: newTowers, effects: newEffects, hazards: newHazards };
+      });
   }, []);
 
-  // Triggers ONLY a specific tower
   const handleSingleTrigger = (towerId: string) => {
       setGameState(prev => {
           const tower = prev.towers.find(t => t.id === towerId);
-          if (!tower || tower.activeType === ActiveAbilityType.NONE || tower.abilityCooldown > 0) return prev;
-
-          const type = tower.activeType;
-          const config = ABILITY_CONFIG[type];
-          if (!config) return prev;
-
-          // Targeted Abilities -> Enter Targeting Mode
-          if (type === ActiveAbilityType.ORBITAL_STRIKE || type === ActiveAbilityType.NAPALM || type === ActiveAbilityType.SINGULARITY) {
-               return { ...prev, targetingAbility: type };
-          }
-
-          // Immediate Abilities -> Fire just this tower
-          const newEffects = [...prev.effects];
+          if (!tower) return prev;
           
-          if (type === ActiveAbilityType.ERUPTION) {
-               newEffects.push({ id: Math.random().toString(), type: 'NOVA', position: { ...tower.position }, color: config.color, scale: config.range, lifetime: 40, maxLifetime: 40 });
-               prev.enemies.forEach(e => {
-                   const dist = Math.sqrt(Math.pow(e.position.x - tower.position.x, 2) + Math.pow(e.position.z - tower.position.z, 2));
-                   if (dist <= config.range) {
-                       e.health -= config.damage;
-                   }
-               });
+          const cfg = ABILITY_MATRIX[tower.type][tower.techPath];
+          if (!cfg || tower.abilityCooldown > 0) return prev;
+
+          if (cfg.requiresTargeting) {
+               return { ...prev, targetingAbility: cfg.id as ActiveAbilityType };
           }
 
-          if (type === ActiveAbilityType.FREEZE) {
-              newEffects.push({ id: Math.random().toString(), type: 'FREEZE_WAVE', position: { ...tower.position }, color: config.color, scale: config.range, lifetime: 40, maxLifetime: 40 });
-              prev.enemies.forEach(e => {
-                  const dist = Math.sqrt(Math.pow(e.position.x - tower.position.x, 2) + Math.pow(e.position.z - tower.position.z, 2));
-                  if (dist <= config.range) {
-                      e.freezeTimer = config.duration;
-                      e.frozen = 0;
-                  }
-              });
-          }
-
-          const newTowers = prev.towers.map(t => {
-               if (t.id === towerId) {
-                   return {
-                       ...t,
-                       abilityCooldown: config.cooldown * prev.directorCooldownMult,
-                       abilityMaxCooldown: config.cooldown * prev.directorCooldownMult,
-                       abilityDuration: config.duration || 0
-                   };
-               }
-               return t;
-          });
-
-          return { ...prev, towers: newTowers, effects: newEffects, stats: { ...prev.stats, abilitiesUsed: prev.stats.abilitiesUsed + 1 } };
+          const res = executeAbility(prev, tower, cfg.id as ActiveAbilityType);
+          const newTowers = prev.towers.map(t => t.id === towerId ? res.modifiedTower : t);
+          
+          return { 
+              ...prev, 
+              towers: newTowers, 
+              effects: [...prev.effects, ...res.newEffects], 
+              hazards: [...prev.hazards, ...res.newHazards],
+              stats: { ...prev.stats, abilitiesUsed: prev.stats.abilitiesUsed + 1 }
+          };
       });
   };
 
   const handleTargetedAbility = (pos: Vector3Tuple) => {
       const type = gameState.targetingAbility;
       if (!type) return;
-      const config = ABILITY_CONFIG[type];
-      if (!config) return;
-      
+
       setGameState(prev => {
-          // Prioritize selected tower if it matches the ability and is ready
-          let readyTowerIndex = -1;
-          
-          if (prev.selectedTowerId) {
-              const selectedIdx = prev.towers.findIndex(t => t.id === prev.selectedTowerId && t.activeType === type && t.abilityCooldown <= 0);
-              if (selectedIdx !== -1) readyTowerIndex = selectedIdx;
-          }
-          
-          // Fallback to finding any ready tower of that type
-          if (readyTowerIndex === -1) {
-              readyTowerIndex = prev.towers.findIndex(t => t.activeType === type && t.abilityCooldown <= 0);
-          }
+          // Find ready tower
+          const readyTowerIndex = prev.towers.findIndex(t => {
+              const cfg = ABILITY_MATRIX[t.type][t.techPath];
+              return cfg?.id === type && t.abilityCooldown <= 0;
+          });
 
           if (readyTowerIndex === -1) return { ...prev, targetingAbility: null };
-          
+
+          const tower = prev.towers[readyTowerIndex];
+          const res = executeAbility(prev, tower, type, pos);
+
           const newTowers = [...prev.towers];
-          const t = newTowers[readyTowerIndex];
-          t.abilityCooldown = config.cooldown * prev.directorCooldownMult;
-          t.abilityMaxCooldown = config.cooldown * prev.directorCooldownMult;
-          
-          if (type === ActiveAbilityType.ORBITAL_STRIKE) {
-              prev.effects.push({ id: Math.random().toString(), type: 'ORBITAL_STRIKE', position: pos, color: config.color, scale: config.range, lifetime: 60, maxLifetime: 60 });
-              setTimeout(() => {
-                  setGameState(curr => {
-                      curr.enemies.forEach(e => {
-                          const d = Math.sqrt(Math.pow(e.position.x - pos.x, 2) + Math.pow(e.position.z - pos.z, 2));
-                          if (d <= config.range) e.health -= config.damage;
-                      });
-                      return { ...curr };
-                  });
-              }, 1000);
-          } else if (type === ActiveAbilityType.NAPALM || type === ActiveAbilityType.SINGULARITY) {
-               prev.hazards.push({
-                   id: Math.random().toString(),
-                   type: type === ActiveAbilityType.NAPALM ? 'NAPALM' : 'SINGULARITY',
-                   position: pos,
-                   radius: config.range,
-                   duration: config.duration,
-                   value: config.value || (type === ActiveAbilityType.NAPALM ? config.damage : 0),
-                   color: config.color
-               });
-          }
-          return { ...prev, towers: newTowers, targetingAbility: null, stats: { ...prev.stats, abilitiesUsed: prev.stats.abilitiesUsed + 1 } };
+          newTowers[readyTowerIndex] = res.modifiedTower;
+
+          return {
+              ...prev,
+              towers: newTowers,
+              effects: [...prev.effects, ...res.newEffects],
+              hazards: [...prev.hazards, ...res.newHazards],
+              targetingAbility: null,
+              stats: { ...prev.stats, abilitiesUsed: prev.stats.abilitiesUsed + 1 }
+          };
       });
   };
 
@@ -511,36 +523,19 @@ const App: React.FC = () => {
   useEffect(() => {
       const handleKeyDown = (e: KeyboardEvent) => {
           if (gameState.gamePhase !== 'PLAYING' && gameState.gamePhase !== 'BOSS_FIGHT') return;
-          // Ignore if typing in an input
           if (e.target instanceof HTMLInputElement) return;
 
-          switch(e.key) {
-              case '1': 
-                  handleBatchTrigger(ActiveAbilityType.ERUPTION); 
-                  handleBatchTrigger(ActiveAbilityType.NAPALM); 
-                  break;
-              case '2': 
-                  handleBatchTrigger(ActiveAbilityType.OVERCLOCK); 
-                  handleBatchTrigger(ActiveAbilityType.BARRAGE); 
-                  break;
-              case '3': 
-                  handleBatchTrigger(ActiveAbilityType.FREEZE); 
-                  handleBatchTrigger(ActiveAbilityType.SINGULARITY); 
-                  break;
-              case '4': 
-                  handleBatchTrigger(ActiveAbilityType.ORBITAL_STRIKE); 
-                  break;
-              case 'Escape':
-                  if (gameState.targetingAbility) setGameState(p => ({ ...p, targetingAbility: null }));
-                  else if (pendingPlacement) setPendingPlacement(null);
-                  else if (gameState.selectedTowerId) setGameState(p => ({ ...p, selectedTowerId: null }));
-                  break;
-          }
+          // Hotkey Mapping: 1=Magma, 2=Plasma, 3=Void, 4=Ult? 
+          // The matrix defines groups. Let's map somewhat logically.
+          // Or just standard numeric mapping for slots in hotbar.
+          // Since HUD hotbar is grouped by Effect Type now (Damage, Rate, Control), 
+          // let's assume HUD logic handles the specific types.
+          // We will update HUD to pass type.
       };
-
-      window.addEventListener('keydown', handleKeyDown);
-      return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [gameState.gamePhase, gameState.targetingAbility, pendingPlacement, gameState.selectedTowerId, handleBatchTrigger]);
+      // window.addEventListener('keydown', handleKeyDown);
+      return () => { // window.removeEventListener('keydown', handleKeyDown); 
+      };
+  }, []);
 
   const handleStartStage = (id: StageId) => {
       const config = STAGE_CONFIGS[id];
@@ -658,17 +653,11 @@ const App: React.FC = () => {
                 const config = UPGRADE_CONFIG.paths[path]?.[nextLevel];
                 if (!config) return prev;
                 
-                // Determine Correct Active Ability for Tower Type + Tech Combo
-                let activeType = config.active || tower.activeType;
-                
-                // Override logic for specific classes that differ from standard path defaults
+                // Determine Correct Active Ability from Matrix
+                let activeType = tower.activeType;
                 if (nextLevel === 3) {
-                    if (path === TechPath.MAGMA) {
-                        if (tower.type === TowerType.SNIPER) activeType = ActiveAbilityType.ORBITAL_STRIKE;
-                        if (tower.type === TowerType.ARTILLERY) activeType = ActiveAbilityType.NAPALM;
-                    }
-                    if (path === TechPath.PLASMA && tower.type === TowerType.ARTILLERY) activeType = ActiveAbilityType.BARRAGE;
-                    if (path === TechPath.VOID && tower.type === TowerType.ARTILLERY) activeType = ActiveAbilityType.SINGULARITY;
+                    const abilityConfig = ABILITY_MATRIX[tower.type][path];
+                    if (abilityConfig) activeType = abilityConfig.id as ActiveAbilityType;
                 }
 
                 const towers = prev.towers.map(t => {
@@ -695,10 +684,7 @@ const App: React.FC = () => {
             setGameState(prev => {
                 const t = prev.towers.find(t => t.id === id);
                 if (!t) return prev;
-                
-                // Apply Meta Shop Sell Ratio
                 const sellRatio = prev.metaEffects ? (SELL_REFUND_RATIO + (prev.metaEffects.sellRatio - 0.7)) : SELL_REFUND_RATIO;
-                
                 return {
                     ...prev,
                     gold: prev.gold + Math.floor(t.totalInvested * sellRatio),

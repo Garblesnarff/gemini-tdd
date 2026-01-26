@@ -79,7 +79,8 @@ export function simulateBoss(enemies: Enemy[], towers: Tower[], hazards: Hazard[
             position: { x: boss.position.x + (Math.random() - 0.5), y: 0.2, z: boss.position.z + (Math.random() - 0.5) },
             pathId: boss.pathId,
             waypointIndex: boss.waypointIndex,
-            progress: 0
+            progress: 0,
+            debuffs: []
           });
         }
         triggered = true;
@@ -136,7 +137,8 @@ export function simulateBoss(enemies: Enemy[], towers: Tower[], hazards: Hazard[
           position: { x: boss.position.x + (Math.random() - 0.5) * 2, y: 0.2, z: boss.position.z + (Math.random() - 0.5) * 2 },
           pathId: boss.pathId,
           waypointIndex: boss.waypointIndex,
-          progress: 0
+          progress: 0,
+          debuffs: []
         });
       }
     }

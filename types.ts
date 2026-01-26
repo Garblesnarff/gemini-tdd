@@ -24,6 +24,14 @@ export interface DamageNumber {
   isCritical: boolean;
 }
 
+export interface EnemyDebuff {
+  id: string;
+  type: 'BURN' | 'VOID_MARK';
+  duration: number;
+  value?: number; // Damage per tick for Burn, Multiplier for Mark
+  sourceId?: string;
+}
+
 export interface Enemy {
   id: string;
   type: EnemyType;
@@ -31,14 +39,14 @@ export interface Enemy {
   maxHealth: number;
   speed: number;
   position: Vector3Tuple;
-  pathId: number; // Index of the path in StageConfig.paths
-  waypointIndex: number; // Formerly pathIndex
-  progress: number; // 0 to 1 between waypoints
-  frozen?: number; // 0 to 1 (slow factor, 0 is stopped, 1 is normal)
-  freezeTimer?: number; // Time remaining for full freeze
-  isElite?: boolean; // New: Elite status
+  pathId: number; 
+  waypointIndex: number; 
+  progress: number; 
+  frozen?: number; 
+  freezeTimer?: number; 
+  isElite?: boolean; 
+  debuffs: EnemyDebuff[]; // New
   
-  // Boss-specific properties (optional on base Enemy for easier array handling)
   isBoss?: boolean;
   bossConfig?: BossConfig;
   currentPhase?: number;
@@ -59,27 +67,35 @@ export enum TowerType {
 
 export enum TechPath {
   NONE = 'NONE',
-  MAGMA = 'MAGMA',   // Damage Focus
-  PLASMA = 'PLASMA', // Fire Rate Focus
-  VOID = 'VOID'      // Range Focus
+  MAGMA = 'MAGMA',   
+  PLASMA = 'PLASMA', 
+  VOID = 'VOID'      
 }
 
 export enum PassiveType {
   NONE = 'NONE',
-  DAMAGE_AURA = 'DAMAGE_AURA', // Magma Lvl 2
-  RATE_AURA = 'RATE_AURA',     // Plasma Lvl 2
-  SLOW_AURA = 'SLOW_AURA'      // Void Lvl 2
+  DAMAGE_AURA = 'DAMAGE_AURA', 
+  RATE_AURA = 'RATE_AURA',     
+  SLOW_AURA = 'SLOW_AURA'      
 }
 
 export enum ActiveAbilityType {
   NONE = 'NONE',
-  ERUPTION = 'ERUPTION',   // Magma Lvl 3 (Basic/Fast)
-  ORBITAL_STRIKE = 'ORBITAL_STRIKE', // Magma Lvl 3 (Sniper)
-  OVERCLOCK = 'OVERCLOCK', // Plasma Lvl 3
-  FREEZE = 'FREEZE',       // Void Lvl 3
-  NAPALM = 'NAPALM',       // Magma Lvl 3 (Artillery)
-  BARRAGE = 'BARRAGE',     // Plasma Lvl 3 (Artillery)
-  SINGULARITY = 'SINGULARITY' // Void Lvl 3 (Artillery)
+  // MAGMA
+  ERUPTION = 'ERUPTION',          // Basic
+  ORBITAL_STRIKE = 'ORBITAL_STRIKE', // Sniper
+  IGNITION_BURST = 'IGNITION_BURST', // Fast (New)
+  NAPALM = 'NAPALM',              // Artillery
+  // PLASMA
+  OVERCLOCK = 'OVERCLOCK',        // Basic
+  PERFORATION = 'PERFORATION',    // Sniper (New)
+  CHAIN_LIGHTNING = 'CHAIN_LIGHTNING', // Fast (New)
+  BARRAGE = 'BARRAGE',            // Artillery
+  // VOID
+  TEMPORAL_ANCHOR = 'TEMPORAL_ANCHOR', // Basic (Renamed from FREEZE)
+  VOID_MARK = 'VOID_MARK',        // Sniper (New)
+  ENTROPY_FIELD = 'ENTROPY_FIELD', // Fast (New)
+  SINGULARITY = 'SINGULARITY'     // Artillery
 }
 
 export enum TargetPriority {
@@ -109,6 +125,12 @@ export interface Augment {
   };
 }
 
+export interface TowerActiveBuff {
+  type: 'IGNITION' | 'PERFORATION' | 'CHAIN_LIGHTNING' | 'ENTROPY_FIELD' | 'VOID_MARK_READY' | 'OVERCLOCK' | 'BARRAGE';
+  duration?: number;
+  stacks?: number;
+}
+
 export interface Tower {
   id: string;
   type: TowerType;
@@ -130,7 +152,8 @@ export interface Tower {
   abilityMaxCooldown: number;  
   abilityDuration: number;     
   targetPriority: TargetPriority;
-  disabledTimer?: number; // For boss disable zones
+  disabledTimer?: number; 
+  activeBuffs: TowerActiveBuff[]; // New
 }
 
 export interface Projectile {
@@ -141,13 +164,21 @@ export interface Projectile {
   speed: number;
   color: string;
   sourceType: TowerType;
-  blastRadius?: number; // For Artillery
+  blastRadius?: number; 
+  
+  // New props for special abilities
+  isPerforating?: boolean;
+  perforationHitList?: string[]; // IDs of enemies already hit
+  isChainLightning?: boolean;
+  isIgnition?: boolean;
+  isVoidMark?: boolean;
 }
 
 export interface Effect {
   id: string;
-  type: 'EXPLOSION' | 'SPARK' | 'TEXT' | 'NOVA' | 'FREEZE_WAVE' | 'ORBITAL_STRIKE' | 'PORTAL' | 'BLOCKED' | 'DISABLE_FIELD';
+  type: 'EXPLOSION' | 'SPARK' | 'TEXT' | 'NOVA' | 'FREEZE_WAVE' | 'ORBITAL_STRIKE' | 'PORTAL' | 'BLOCKED' | 'DISABLE_FIELD' | 'CHAIN_ARC' | 'VOID_SIGIL';
   position: Vector3Tuple;
+  targetPosition?: Vector3Tuple; // For Chain Arc
   color: string;
   scale: number;
   lifetime: number; 
@@ -186,7 +217,7 @@ export enum StageId {
 export type GamePhase = 'MENU' | 'STAGE_SELECT' | 'SHOP' | 'PLAYING' | 'BOSS_INTRO' | 'BOSS_FIGHT' | 'BOSS_DEATH' | 'STAGE_COMPLETE' | 'GAME_OVER';
 
 export interface StageEnvironment {
-  skyPreset: string; // 'night' | 'sunset' | 'city' | 'park' | 'forest'
+  skyPreset: string; 
   gridColor: string;
   pathColor: string;
   fogColor?: string;
@@ -365,8 +396,8 @@ export interface GameStats {
   totalGoldEarned: number;
   towersBuilt: number;
   abilitiesUsed: number;
-  enemiesKilled: number; // Added for tracking
-  coresEarned?: number; // Ephemeral for results screen
+  enemiesKilled: number; 
+  coresEarned?: number; 
 }
 
 export type DirectorState = 'NEUTRAL' | 'PRESSURE' | 'RELIEF';
@@ -376,13 +407,13 @@ export interface GameState {
   gold: number;
   lives: number;
   wave: number;
-  enemies: Enemy[]; // Can contain Boss instances
+  enemies: Enemy[]; 
   towers: Tower[];
   projectiles: Projectile[];
   effects: Effect[];
   damageNumbers: DamageNumber[];
   hazards: Hazard[];
-  supplyDrops: SupplyDrop[]; // New Entity list
+  supplyDrops: SupplyDrop[]; 
   gameSpeed: number; 
   isGameOver: boolean;
   waveStatus: 'IDLE' | 'SPAWNING' | 'CLEARING';
@@ -396,8 +427,8 @@ export interface GameState {
   // New Fields
   currentStage: StageId;
   stageProgress: Record<StageId, StageProgress>;
-  metaProgress: MetaProgress; // Added Meta Progress to GameState
-  metaEffects: AppliedMetaEffects; // Calculated once per stage start
+  metaProgress: MetaProgress; 
+  metaEffects: AppliedMetaEffects; 
   activeBoss: Boss | null;
   bossAnnouncement: string | null;
   gamePhase: GamePhase;
@@ -413,7 +444,7 @@ export interface GameState {
       waveEndTime: number; 
       consecutiveCleanWaves: number; 
   };
-  pendingDirectorState?: DirectorState; // Helper to track transition streak
+  pendingDirectorState?: DirectorState; 
   directorAction: DirectorActionType;
   directorScaling: number;
   directorGoldBonus: number;

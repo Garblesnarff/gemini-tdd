@@ -4,7 +4,6 @@ import { TowerType, EnemyType, TechPath, PassiveType, ActiveAbilityType, Augment
 export const GRID_SIZE = 12;
 
 export const DIRECTOR_CONFIG = {
-    // Thresholds
     PRESSURE: {
         CLEAN_WAVES: 3,
         GOLD: 400,
@@ -14,7 +13,6 @@ export const DIRECTOR_CONFIG = {
         LIVES_PCT: 0.4,
         LIVES_LOST_WAVE: 2
     },
-    // Multipliers
     SCALING: {
         PRESSURE: 1.30,
         RELIEF: 0.85,
@@ -26,8 +24,8 @@ export const DIRECTOR_CONFIG = {
         NEUTRAL: 1.0
     },
     COOLDOWN: {
-        PRESSURE: 0.85, // Faster boss ability cooldowns
-        RELIEF: 1.15,   // Slower boss ability cooldowns
+        PRESSURE: 0.85,
+        RELIEF: 1.15,
         NEUTRAL: 1.0
     },
     ELITE_CHANCE: 0.15,
@@ -52,13 +50,12 @@ const STAGE_2_PATH: Vector3Tuple[] = [
   { x: -6, y: 0.2, z: 6 }, { x: 6, y: 0.2, z: 6 }
 ];
 
-// Crossroads - Path A (Left)
 const STAGE_3_PATH_A: Vector3Tuple[] = [
     { x: -6, y: 0.2, z: -6 }, { x: -4, y: 0.2, z: -4 },
     { x: -4, y: 0.2, z: 4 }, { x: 0, y: 0.2, z: 4 },
     { x: 0, y: 0.2, z: 0 }, { x: 6, y: 0.2, z: 6 }
 ];
-// Crossroads - Path B (Right)
+
 const STAGE_3_PATH_B: Vector3Tuple[] = [
     { x: -6, y: 0.2, z: -6 }, { x: -4, y: 0.2, z: -4 },
     { x: 4, y: 0.2, z: -4 }, { x: 4, y: 0.2, z: 0 },
@@ -113,7 +110,7 @@ const STAGE_2_BOSS: BossConfig = {
     baseHealth: 8000,
     speed: 0.6,
     size: 2.8,
-    color: '#991b1b', // Deep Red
+    color: '#991b1b', 
     phases: [
         { healthThreshold: 1.0, speedMultiplier: 1.0, damageResistance: 0.1, announcement: "VANGUARD ALPHA ENGAGED", visualChange: 'charged' },
         { healthThreshold: 0.7, speedMultiplier: 1.0, damageResistance: 0.15, announcement: "ENGINES SPOOLING UP", visualChange: 'unstable', abilityUnlock: 'speed_burst' },
@@ -136,7 +133,7 @@ const STAGE_3_BOSS: BossConfig = {
     baseHealth: 10000,
     speed: 0.4,
     size: 3.0,
-    color: '#84cc16', // Lime/Green
+    color: '#84cc16', 
     phases: [
         { healthThreshold: 1.0, speedMultiplier: 1.0, damageResistance: 0.1, announcement: "THE HIVE AWAKENS", visualChange: 'unstable' },
         { healthThreshold: 0.75, speedMultiplier: 1.1, damageResistance: 0.1, announcement: "BROOD ACCELERATION", visualChange: 'enraged', abilityUnlock: 'regen' },
@@ -145,7 +142,7 @@ const STAGE_3_BOSS: BossConfig = {
     ],
     abilities: [
         { id: 'spawn_swarm', name: 'Swarm', type: BossAbilityType.SPAWN_MINIONS, cooldown: 10000 },
-        { id: 'regen', name: 'Biomass Recovery', type: BossAbilityType.REGEN, cooldown: 15000, duration: 5000, value: 0.05 } // 5% heal
+        { id: 'regen', name: 'Biomass Recovery', type: BossAbilityType.REGEN, cooldown: 15000, duration: 5000, value: 0.05 } 
     ],
     minionSpawns: [
         { triggerHealth: 0.8, enemyType: EnemyType.BASIC, count: 10, announcement: "Swarm Deployed" },
@@ -161,7 +158,7 @@ const STAGE_4_BOSS: BossConfig = {
     baseHealth: 15000,
     speed: 0.35,
     size: 3.5,
-    color: '#475569', // Slate Gray
+    color: '#475569', 
     phases: [
         { healthThreshold: 1.0, speedMultiplier: 1.0, damageResistance: 0.4, announcement: "SIEGE PROTOCOL INITIATED", visualChange: 'shielded' },
         { healthThreshold: 0.7, speedMultiplier: 1.0, damageResistance: 0.3, announcement: "JAMMING FIELD ACTIVE", visualChange: 'charged', abilityUnlock: 'disable_zone' },
@@ -185,7 +182,7 @@ const STAGE_5_BOSS: BossConfig = {
     baseHealth: 25000,
     speed: 0.5,
     size: 4.0,
-    color: '#3b0764', // Deep Purple
+    color: '#3b0764', 
     phases: [
         { healthThreshold: 1.0, speedMultiplier: 1.0, damageResistance: 0.2, announcement: "REALITY BREACH DETECTED", visualChange: 'unstable', abilityUnlock: 'shield_pulse' },
         { healthThreshold: 0.75, speedMultiplier: 1.0, damageResistance: 0.2, announcement: "THE VOID EXPANDS", visualChange: 'charged', abilityUnlock: 'spawn_void' },
@@ -283,7 +280,7 @@ export const STAGE_CONFIGS: Record<StageId, StageConfig> = {
         gridColor: "#022c22", 
         pathColor: "#064e3b", 
         fogColor: "#064e3b",
-        fogDensity: 0.08, // Heavy fog
+        fogDensity: 0.08, 
         ambientIntensity: 0.3,
         particleType: 'dust'
     }
@@ -344,14 +341,10 @@ export const MAX_LEVEL = 3;
 export const SELL_REFUND_RATIO = 0.7; 
 
 // --- WAVE DEFINITIONS ---
-
 export const getWaveDefinition = (stageId: StageId, waveNumber: number): WaveDefinition => {
-    
-    // Helper for creating wave groups with parallel logic
     const grp = (type: EnemyType, count: number, startDelay: number, interval: number, burstSize: number = 1): WaveGroup => 
         ({ type, count, startDelay, interval, burstSize });
 
-    // Multipliers for difficulty
     const multipliers = {
         [StageId.STAGE_1]: 1.0,
         [StageId.STAGE_2]: 1.2,
@@ -360,13 +353,11 @@ export const getWaveDefinition = (stageId: StageId, waveNumber: number): WaveDef
         [StageId.STAGE_5]: 2.5
     };
     const scale = multipliers[stageId] || 1.0;
-    const c = (base: number) => Math.floor(base * scale); // Count scaler
+    const c = (base: number) => Math.floor(base * scale); 
 
     const groups: WaveGroup[] = [];
     let intel = "";
 
-    // --- PHASE 1: EARLY GAME (Waves 1-5) ---
-    // Single push, teaching mechanics.
     if (waveNumber <= 5) {
         const p1 = 500;
         if (waveNumber === 1) {
@@ -375,75 +366,53 @@ export const getWaveDefinition = (stageId: StageId, waveNumber: number): WaveDef
         } else if (waveNumber === 2) {
             groups.push(grp(EnemyType.BASIC, c(8), p1, 800));
         } else if (waveNumber === 3) {
-            // Intro Splitter
             groups.push(grp(EnemyType.BASIC, c(5), p1, 800));
             groups.push(grp(EnemyType.SPLITTER, c(2), p1 + 2000, 2000));
             intel = "Splitter units carry mini-drones. Area damage recommended.";
         } else if (waveNumber === 4) {
-            // Intro Fast
             groups.push(grp(EnemyType.BASIC, c(8), p1, 800));
             groups.push(grp(EnemyType.FAST, c(3), p1 + 1000, 1000));
-        } else { // Wave 5
-            // Swarm test
-            groups.push(grp(EnemyType.BASIC, c(15), p1, 400, 2)); // Burst size 2
+        } else { 
+            groups.push(grp(EnemyType.BASIC, c(15), p1, 400, 2)); 
             intel = "High density signature. Swarm incoming.";
         }
     } 
-    // --- PHASE 2: MID GAME (Waves 6-15) ---
-    // Two pushes: Initial contact + Reinforcement wave
     else if (waveNumber <= 15) {
         const p1 = 0;
-        const p2 = 4000; // 4s gap
+        const p2 = 4000; 
         
         if (waveNumber <= 10) {
-            // Speed & Basics
             groups.push(grp(EnemyType.BASIC, c(10 + waveNumber), p1, 600)); 
             groups.push(grp(EnemyType.FAST, c(5 + (waveNumber-5)), p1 + 500, 300));
-            
-            // Push 2: Blitz
             groups.push(grp(EnemyType.FAST, c(4 + (waveNumber-5)), p2, 150, 1));
             
             if (waveNumber === 6) intel = "Multiple contacts. Fast movers leading the charge.";
         } else {
-            // Heavy armor intro (11-15)
-            // Push 1: Screening force
             groups.push(grp(EnemyType.BASIC, c(15), p1, 500));
             groups.push(grp(EnemyType.SPLITTER, c(3), p1 + 1000, 1500));
-            
-            // Push 2: Tank Escort
             const tanks = 1 + Math.floor((waveNumber - 10) / 2);
-            groups.push(grp(EnemyType.TANK, c(tanks), p2, 3000)); // Tank
-            groups.push(grp(EnemyType.FAST, c(tanks * 3), p2, 200, 3)); // Escort burst
+            groups.push(grp(EnemyType.TANK, c(tanks), p2, 3000)); 
+            groups.push(grp(EnemyType.FAST, c(tanks * 3), p2, 200, 3)); 
             
             if (waveNumber === 11) intel = "Heavy armor detected. Escort configuration.";
         }
     }
-    // --- PHASE 3: LATE GAME (Waves 16-25) ---
-    // Three pushes: Constant pressure
     else if (waveNumber <= 25) {
         const p1 = 0;
         const p2 = 3000;
         const p3 = 7000;
-        
         const difficulty = waveNumber - 15;
         
-        // Push 1: Mixed Swarm
         groups.push(grp(EnemyType.BASIC, c(15 + difficulty), p1, 300, 2));
         groups.push(grp(EnemyType.FAST, c(8 + difficulty), p1 + 500, 200));
-        
-        // Push 2: Heavy Assault
         groups.push(grp(EnemyType.TANK, c(2 + Math.floor(difficulty/3)), p2, 2000));
         groups.push(grp(EnemyType.SPLITTER, c(4 + Math.floor(difficulty/2)), p2 + 500, 800));
-        
-        // Push 3: Final Blitz
         groups.push(grp(EnemyType.FAST, c(10 + difficulty), p3, 100, 2));
-        groups.push(grp(EnemyType.BASIC, c(10), p3 + 1000, 200, 5)); // Clumps of 5
+        groups.push(grp(EnemyType.BASIC, c(10), p3 + 1000, 200, 5)); 
         
         if (waveNumber === 25) intel = "MAXIMUM THREAT. Multiple heavy columns inbound.";
     } 
-    // --- ENDLESS / LOOP (Waves 26+) ---
     else {
-        // Just throw everything
         const loop = waveNumber - 25;
         groups.push(grp(EnemyType.TANK, c(2 + loop), 0, 1000));
         groups.push(grp(EnemyType.FAST, c(20 + loop * 2), 1000, 100, 2));
@@ -598,56 +567,163 @@ export const AUGMENT_POOL: Augment[] = [
   }
 ];
 
-// Ability Configuration
-export const ABILITY_CONFIG = {
+export interface AbilityConfig {
+    id: string;
+    name: string;
+    description: string;
+    type: 'INSTANT_AOE' | 'TARGETED_AOE' | 'SELF_BUFF' | 'DEBUFF' | 'ZONE' | 'PROJECTILE_MOD';
+    damage?: number;
+    range?: number; // Effect radius
+    cooldown: number;
+    duration?: number;
+    value?: number; // Generic value for buff/debuff magnitude
+    color: string;
+    requiresTargeting?: boolean;
+}
+
+// Full 12-Ability Matrix
+export const ABILITY_MATRIX: Record<TowerType, Record<TechPath, AbilityConfig | null>> = {
+    [TowerType.BASIC]: {
+        [TechPath.NONE]: null,
+        [TechPath.MAGMA]: {
+            id: ActiveAbilityType.ERUPTION,
+            name: 'Eruption',
+            description: 'Deals 500 damage to enemies in a large radius.',
+            type: 'INSTANT_AOE',
+            damage: 500,
+            range: 5,
+            cooldown: 20000,
+            color: '#ef4444'
+        },
+        [TechPath.PLASMA]: {
+            id: ActiveAbilityType.OVERCLOCK,
+            name: 'Overclock',
+            description: 'Triples fire rate for 5 seconds.',
+            type: 'SELF_BUFF',
+            value: 3, // Multiplier
+            duration: 5000,
+            cooldown: 25000,
+            color: '#06b6d4'
+        },
+        [TechPath.VOID]: {
+            id: ActiveAbilityType.TEMPORAL_ANCHOR,
+            name: 'Temporal Anchor',
+            description: 'Freezes all enemies in range for 4 seconds.',
+            type: 'INSTANT_AOE',
+            duration: 4000,
+            range: 6,
+            cooldown: 30000,
+            color: '#8b5cf6'
+        }
+    },
+    [TowerType.SNIPER]: {
+        [TechPath.NONE]: null,
+        [TechPath.MAGMA]: {
+            id: ActiveAbilityType.ORBITAL_STRIKE,
+            name: 'Orbital Strike',
+            description: 'Call down a beam dealing 1000 damage in a targeted area.',
+            type: 'TARGETED_AOE',
+            damage: 1000,
+            range: 4,
+            cooldown: 25000,
+            color: '#fb7185',
+            requiresTargeting: true
+        },
+        [TechPath.PLASMA]: {
+            id: ActiveAbilityType.PERFORATION,
+            name: 'Perforation',
+            description: 'Shots pierce through all enemies for 8 seconds.',
+            type: 'PROJECTILE_MOD',
+            duration: 8000,
+            cooldown: 20000,
+            color: '#38bdf8'
+        },
+        [TechPath.VOID]: {
+            id: ActiveAbilityType.VOID_MARK,
+            name: 'Void Mark',
+            description: 'Next shot marks target to take 50% extra damage.',
+            type: 'DEBUFF',
+            duration: 8000,
+            value: 1.5,
+            cooldown: 20000,
+            color: '#c084fc'
+        }
+    },
+    [TowerType.FAST]: {
+        [TechPath.NONE]: null,
+        [TechPath.MAGMA]: {
+            id: ActiveAbilityType.IGNITION_BURST,
+            name: 'Ignition Burst',
+            description: 'Next 30 shots apply a stacking burn effect.',
+            type: 'DEBUFF',
+            value: 50, // Damage over time
+            duration: 3000, // Dot duration
+            cooldown: 18000,
+            color: '#f97316'
+        },
+        [TechPath.PLASMA]: {
+            id: ActiveAbilityType.CHAIN_LIGHTNING,
+            name: 'Chain Lightning',
+            description: 'Shots arc to 3 nearby enemies for 6 seconds.',
+            type: 'PROJECTILE_MOD',
+            duration: 6000,
+            cooldown: 22000,
+            color: '#22d3ee'
+        },
+        [TechPath.VOID]: {
+            id: ActiveAbilityType.ENTROPY_FIELD,
+            name: 'Entropy Field',
+            description: 'Slow aura becomes a root (0 speed) for 3 seconds.',
+            type: 'ZONE',
+            duration: 3000,
+            cooldown: 25000,
+            color: '#4c1d95'
+        }
+    },
+    [TowerType.ARTILLERY]: {
+        [TechPath.NONE]: null,
+        [TechPath.MAGMA]: {
+            id: ActiveAbilityType.NAPALM,
+            name: 'Napalm Zone',
+            description: 'Creates a damaging fire zone at target location.',
+            type: 'TARGETED_AOE',
+            damage: 100, // per tick
+            duration: 5000,
+            range: 4,
+            cooldown: 25000,
+            color: '#ea580c',
+            requiresTargeting: true
+        },
+        [TechPath.PLASMA]: {
+            id: ActiveAbilityType.BARRAGE,
+            name: 'Barrage',
+            description: 'Fire rate increased 10x for 1.5 seconds (Rapid Volley).',
+            type: 'SELF_BUFF',
+            value: 10,
+            duration: 1500,
+            cooldown: 15000,
+            color: '#0ea5e9'
+        },
+        [TechPath.VOID]: {
+            id: ActiveAbilityType.SINGULARITY,
+            name: 'Singularity',
+            description: 'Creates a vortex that pulls enemies in.',
+            type: 'TARGETED_AOE',
+            value: 0.1, // Pull strength
+            duration: 3000,
+            range: 6,
+            cooldown: 30000,
+            color: '#7c3aed',
+            requiresTargeting: true
+        }
+    }
+};
+
+// Helper to access aura configs which were previously in ABILITY_CONFIG
+export const PASSIVE_CONFIG = {
   [PassiveType.DAMAGE_AURA]: { range: 2.5, multiplier: 1.25 }, 
   [PassiveType.RATE_AURA]: { range: 2.5, multiplier: 1.25 },   
   [PassiveType.SLOW_AURA]: { range: 3.5, slowFactor: 0.7 },    
-
-  [ActiveAbilityType.ERUPTION]: { 
-    damage: 500, 
-    range: 5, 
-    cooldown: 20000, 
-    color: '#ef4444'
-  },
-  [ActiveAbilityType.ORBITAL_STRIKE]: { 
-    damage: 1000, // Higher damage for snipers
-    range: 4, 
-    cooldown: 25000, 
-    color: '#fb7185' // Lighter red
-  },
-  [ActiveAbilityType.OVERCLOCK]: { 
-    multiplier: 3, 
-    duration: 5000, 
-    cooldown: 25000, 
-    color: '#06b6d4'
-  },
-  [ActiveAbilityType.FREEZE]: { 
-    duration: 4000, 
-    range: 6, 
-    cooldown: 30000, 
-    color: '#8b5cf6'
-  },
-  [ActiveAbilityType.NAPALM]: {
-      damage: 100, // Per tick
-      duration: 5000,
-      range: 4,
-      cooldown: 25000,
-      color: '#f97316'
-  },
-  [ActiveAbilityType.BARRAGE]: {
-      count: 3,
-      interval: 200,
-      cooldown: 15000,
-      color: '#22d3ee'
-  },
-  [ActiveAbilityType.SINGULARITY]: {
-      range: 6,
-      duration: 3000,
-      cooldown: 30000,
-      value: 0.1, // Pull strength
-      color: '#7c3aed'
-  }
 };
 
 export const UPGRADE_CONFIG = {
@@ -659,15 +735,15 @@ export const UPGRADE_CONFIG = {
     [TechPath.NONE]: { damage: 1, range: 1, fireRate: 1 },
     [TechPath.MAGMA]: { 
       2: { damage: 2.0, range: 1.0, fireRate: 0.9, passive: PassiveType.DAMAGE_AURA },
-      3: { damage: 4.0, range: 1.1, fireRate: 0.8, active: ActiveAbilityType.ERUPTION } // Defaults to Eruption
+      3: { damage: 4.0, range: 1.1, fireRate: 0.8 } // Ability looked up dynamically
     },
     [TechPath.PLASMA]: { 
       2: { damage: 0.8, range: 0.9, fireRate: 2.0, passive: PassiveType.RATE_AURA },
-      3: { damage: 0.7, range: 1.0, fireRate: 3.5, active: ActiveAbilityType.OVERCLOCK }
+      3: { damage: 0.7, range: 1.0, fireRate: 3.5 }
     },
     [TechPath.VOID]: { 
       2: { damage: 1.2, range: 1.5, fireRate: 1.0, passive: PassiveType.SLOW_AURA },
-      3: { damage: 1.5, range: 2.0, fireRate: 1.1, active: ActiveAbilityType.FREEZE }
+      3: { damage: 1.5, range: 2.0, fireRate: 1.1 }
     }
   }
 };
@@ -678,30 +754,21 @@ export const TECH_PATH_INFO = {
     description: 'Concentrates raw power into high-damage rounds.', 
     color: '#ef4444',
     icon: 'Swords',
-    abilities: [
-        'Passive: Ignition Aura (Neighbors +25% DMG)',
-        'Active: Eruption / Orbital Strike / Napalm'
-    ]
+    passiveDesc: 'Ignition Aura (Neighbors +25% DMG)'
   },
   [TechPath.PLASMA]: { 
     name: 'Plasma Tech', 
     description: 'Overclocks servos for extreme fire rates.', 
     color: '#06b6d4',
     icon: 'Zap',
-    abilities: [
-        'Passive: Flux Network (Neighbors +25% Fire Rate)',
-        'Active: Overclock / Barrage'
-    ]
+    passiveDesc: 'Flux Network (Neighbors +25% Fire Rate)'
   },
   [TechPath.VOID]: { 
     name: 'Void Tech', 
     description: 'Advanced optics for superior range coverage.', 
     color: '#8b5cf6',
     icon: 'Eye',
-    abilities: [
-        'Passive: Gravity Field (Slows Enemies)',
-        'Active: Time Stop / Singularity'
-    ]
+    passiveDesc: 'Gravity Field (Slows Enemies)'
   }
 };
 
