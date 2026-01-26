@@ -57,11 +57,36 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
             activeBoss = deadBoss || null;
         }
 
-        // Supply Drop Spawning Logic
+        // Supply Drop Expiration
         supplyDrops = supplyDrops.filter(sd => {
             sd.lifetime -= gameDelta;
             return sd.lifetime > 0;
         });
+
+        // Periodic Supply Drop Spawning (Director RELIEF state)
+        if ((prev.waveStatus === 'SPAWNING' || prev.waveStatus === 'CLEARING') && prev.directorState === 'RELIEF') {
+            supplyDropTimerRef.current += gameDelta;
+            // Spawn approx every 9 seconds
+            if (supplyDropTimerRef.current >= 9000) {
+                if (supplyDrops.length < 3) {
+                    const val = Math.floor(Math.random() * (DIRECTOR_CONFIG.SUPPLY_DROP_VALUE.MAX - DIRECTOR_CONFIG.SUPPLY_DROP_VALUE.MIN)) + DIRECTOR_CONFIG.SUPPLY_DROP_VALUE.MIN;
+                    // Random position logic matches App.tsx
+                    const x = Math.floor((Math.random() - 0.5) * GRID_SIZE * 1.5);
+                    const z = Math.floor((Math.random() - 0.5) * GRID_SIZE * 1.5);
+                    
+                    supplyDrops.push({
+                        id: `drop_${Date.now()}_${Math.random()}`,
+                        position: { x, y: 0, z },
+                        value: val,
+                        lifetime: DIRECTOR_CONFIG.SUPPLY_DROP_LIFETIME,
+                        maxLifetime: DIRECTOR_CONFIG.SUPPLY_DROP_LIFETIME
+                    });
+                }
+                supplyDropTimerRef.current = 0;
+            }
+        } else if (prev.waveStatus === 'IDLE') {
+            supplyDropTimerRef.current = 0;
+        }
 
         // 1. Tower Stats Calculation
         towers = calculateTowerStats(towers, prev.activeAugments, ctx);
