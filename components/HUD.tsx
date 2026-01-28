@@ -1,4 +1,3 @@
-
 import React, { useMemo } from 'react';
 import { GameState, TowerType, TechPath, ActiveAbilityType, TargetPriority, Vector3Tuple, Augment, StageId, BossAbilityType, Tower } from '../types';
 import { TOWER_STATS, TECH_PATH_INFO, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_MATRIX, STAGE_CONFIGS } from '../constants';
@@ -227,7 +226,7 @@ const HUD: React.FC<HUDProps> = ({
   onReset,
   onUpgradeTower,
   onDeselectTower,
-  onSellTower,
+  onSellTower, 
   onSetSpeed,
   onTriggerAbility,
   pendingPlacement,

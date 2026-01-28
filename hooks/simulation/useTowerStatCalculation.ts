@@ -92,17 +92,17 @@ export function calculateTowerStats(towers: Tower[], augments: Augment[], ctx: S
 
     // Apply Global Augments
     augments.forEach(aug => {
-      if (!aug) return;
+      if (!aug || !aug.effect) return;
       const e = aug.effect;
-      if (!e) return;
       
       const isTargeted = e.target === 'ALL' || e.target === tower.type;
       const isTechMatch = !e.techTarget || e.techTarget === tower.techPath;
 
       if (isTargeted && isTechMatch && e.stat) {
-        if (e.stat === 'damage') nextTower.damage *= (1 + (e.value || 0));
-        if (e.stat === 'range') nextTower.range *= (1 + (e.value || 0));
-        if (e.stat === 'fireRate') nextTower.fireRate *= (1 + (e.value || 0));
+        const val = e.value || 0;
+        if (e.stat === 'damage') nextTower.damage *= (1 + val);
+        if (e.stat === 'range') nextTower.range *= (1 + val);
+        if (e.stat === 'fireRate') nextTower.fireRate *= (1 + val);
       }
       
       // Special Augment: Bombardment Protocol

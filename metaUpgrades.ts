@@ -171,41 +171,45 @@ export const getAppliedMetaEffects = (progress: MetaProgress): AppliedMetaEffect
         abilityDurationMultiplier: { [TechPath.MAGMA]: 1, [TechPath.PLASMA]: 1, [TechPath.VOID]: 1, [TechPath.NONE]: 1 },
     };
 
+    if (!progress || !progress.upgradeLevels) return effects;
+
     META_UPGRADES.forEach(upgrade => {
+        if (!upgrade) return;
         const level = progress.upgradeLevels[upgrade.id] || 0;
         if (level === 0) return;
 
-        // Apply effects level times (assuming linear scaling for now)
-        upgrade.effects.forEach(e => {
-            if (!e) return;
-            const totalValue = (e.value || 0) * level;
+        if (upgrade.effects) {
+            upgrade.effects.forEach(e => {
+                if (!e) return;
+                const val = e.value !== undefined ? e.value : 0;
+                const totalValue = val * level;
 
-            switch (e.type) {
-                case 'STARTING_GOLD': effects.bonusStartingGold += totalValue; break;
-                case 'STARTING_LIVES': effects.bonusStartingLives += totalValue; break;
-                case 'KILL_GOLD_MULT': effects.killGoldMultiplier += totalValue; break;
-                case 'SELL_RATIO': effects.sellRatio += totalValue; break;
-                case 'GLOBAL_DAMAGE': effects.globalDamageMultiplier += totalValue; break;
-                case 'GLOBAL_RANGE': effects.globalRangeMultiplier += totalValue; break;
-                case 'TOWER_COST_MULT': effects.towerCostMultiplier += totalValue; break;
-                case 'CRIT_CHANCE': effects.critChance += totalValue; break;
-                case 'INTEREST_RATE': effects.interestRate += totalValue; break;
-                case 'BOSS_RESIST': effects.bossResist += totalValue; break;
-                case 'LIFE_REGEN_WAVES': 
-                     // Non-linear: just set the value if level > 0
-                     effects.lifeRegenWaves = e.value; 
-                     break;
-                case 'ABILITY_DAMAGE':
-                    if (e.techPath) effects.abilityDamageMultiplier[e.techPath] += totalValue;
-                    break;
-                case 'ABILITY_COOLDOWN':
-                    if (e.techPath) effects.abilityCooldownMultiplier[e.techPath] += totalValue;
-                    break;
-                case 'ABILITY_DURATION':
-                    if (e.techPath) effects.abilityDurationMultiplier[e.techPath] += totalValue;
-                    break;
-            }
-        });
+                switch (e.type) {
+                    case 'STARTING_GOLD': effects.bonusStartingGold += totalValue; break;
+                    case 'STARTING_LIVES': effects.bonusStartingLives += totalValue; break;
+                    case 'KILL_GOLD_MULT': effects.killGoldMultiplier += totalValue; break;
+                    case 'SELL_RATIO': effects.sellRatio += totalValue; break;
+                    case 'GLOBAL_DAMAGE': effects.globalDamageMultiplier += totalValue; break;
+                    case 'GLOBAL_RANGE': effects.globalRangeMultiplier += totalValue; break;
+                    case 'TOWER_COST_MULT': effects.towerCostMultiplier += totalValue; break;
+                    case 'CRIT_CHANCE': effects.critChance += totalValue; break;
+                    case 'INTEREST_RATE': effects.interestRate += totalValue; break;
+                    case 'BOSS_RESIST': effects.bossResist += totalValue; break;
+                    case 'LIFE_REGEN_WAVES': 
+                        effects.lifeRegenWaves = val; 
+                        break;
+                    case 'ABILITY_DAMAGE':
+                        if (e.techPath) effects.abilityDamageMultiplier[e.techPath] += totalValue;
+                        break;
+                    case 'ABILITY_COOLDOWN':
+                        if (e.techPath) effects.abilityCooldownMultiplier[e.techPath] += totalValue;
+                        break;
+                    case 'ABILITY_DURATION':
+                        if (e.techPath) effects.abilityDurationMultiplier[e.techPath] += totalValue;
+                        break;
+                }
+            });
+        }
     });
 
     return effects;

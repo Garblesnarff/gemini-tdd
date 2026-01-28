@@ -64,18 +64,6 @@ function moveProjectile(
     events: GameEvent[],
     ctx: SimulationContext
 ) {
-    // If perforating and no target (or hit target), keep going in current vector
-    // For simplicity, if Perforating, we need a direction vector. 
-    // If we have a target, we update direction. If not, we persist?
-    // Simplified: Just use last known vector or delete if off screen.
-    // To properly support linear pierce without target, we'd need a velocity vector in Projectile.
-    // For MVP, we will only perforate IF there is a target to move towards, or if we hit, we jump to just past it.
-    // Actually, Perforation without vector persistence is tricky. 
-    // Let's cheat: If perforating, we look for a new target behind the current one? 
-    // No, let's just delete if target is null for MVP to avoid complexity overload, 
-    // BUT since we want to pierce LINES, we should try to keep moving.
-    // Fallback: If target is valid, move. If not, delete (limit of this MVP implementation).
-    
     if (target) {
         const dx = target.position.x - p.position.x;
         const dz = target.position.z - p.position.z;
@@ -84,7 +72,6 @@ function moveProjectile(
         
         // Perforation hit check while moving
         if (p.isPerforating) {
-            // Check all enemies along path? Or just collision check all enemies near point?
             allEnemies.forEach(e => {
                 if (!p.perforationHitList?.includes(e.id) && getDistance2D(p.position, e.position) < 0.5) {
                     processDirectHit(e, p, allEnemies, newEffects, newDamageNumbers, events, ctx);
@@ -97,9 +84,7 @@ function moveProjectile(
         p.position.z += (dz / dist) * speed;
         p.position.y = 0.5 + Math.sin(Date.now() / 200) * 0.2;
         nextProjectiles.push(p);
-    } else if (p.isPerforating) {
-        // Just move forward in arbitrary z? No, delete to prevent bugs.
-    }
+    } 
 }
 
 function processDirectHit(
@@ -132,25 +117,23 @@ function processDirectHit(
             value: 1.5
         });
         newEffects.push({ id: Math.random().toString(), type: 'VOID_SIGIL', position: { ...target.position, y: 1.5 }, color: '#c084fc', scale: 1, lifetime: 40, maxLifetime: 40 });
-        damage = 0; // The mark shot itself deals no damage? Spec says "instead of damage".
+        damage = 0; 
     }
 
     // Ignition Burn Application
     if (p.isIgnition) {
         if (!target.debuffs) target.debuffs = [];
-        // Stack burn? Spec says stacks.
         target.debuffs.push({
             id: Math.random().toString(),
             type: 'BURN',
             duration: 3000,
-            value: 50 // 50 total damage over 3s = 16.6 DPS
+            value: 50 
         });
         newEffects.push({ id: Math.random().toString(), type: 'SPARK', position: target.position, color: '#f97316', scale: 0.5, lifetime: 20, maxLifetime: 20 });
     }
 
     // Chain Lightning Logic
     if (p.isChainLightning) {
-        // Find 3 nearest
         const neighbors = enemies
             .filter(e => e.id !== target.id && getDistance2D(e.position, target.position) <= 3)
             .sort((a,b) => getDistance2D(a.position, target.position) - getDistance2D(b.position, target.position))
@@ -174,7 +157,6 @@ function processDirectHit(
     }
 
     // Apply Damage Modifiers (Boss/Mark)
-    // Check for existing Void Mark
     const mark = target.debuffs?.find(d => d.type === 'VOID_MARK');
     if (mark && !p.isVoidMark) {
         damage *= (mark.value || 1.5);
@@ -206,8 +188,10 @@ function processDirectHit(
         
         // Sniper Splash Augment
         const splashAug = ctx.activeAugments.find(a => a.id === 'splash_sniper_1');
+        // Added safety checks here
         if (splashAug && splashAug.effect && p.sourceType === TowerType.SNIPER) {
-            const splashDmg = damage * (splashAug.effect.value || 0.5);
+            const val = splashAug.effect.value !== undefined ? splashAug.effect.value : 0.5;
+            const splashDmg = damage * val;
             enemies.forEach(e => {
                 if (e.id === target.id) return;
                 if (getDistance2D(e.position, target.position) <= 2) {
