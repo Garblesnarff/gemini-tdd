@@ -1,3 +1,4 @@
+
 import React, { useMemo } from 'react';
 import { GameState, TowerType, TechPath, ActiveAbilityType, TargetPriority, Vector3Tuple, Augment, StageId, BossAbilityType, Tower } from '../types';
 import { TOWER_STATS, TECH_PATH_INFO, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_MATRIX, STAGE_CONFIGS } from '../constants';
@@ -315,21 +316,70 @@ const HUD: React.FC<HUDProps> = ({
                       {Object.values(STAGE_CONFIGS).map(config => {
                           const progress = gameState.stageProgress[config.id];
                           const locked = !progress.unlocked;
+                          
+                          // Visual flair: Assign icon based on stage ID
+                          const StageIcon = {
+                              [StageId.STAGE_1]: Shield,
+                              [StageId.STAGE_2]: Swords,
+                              [StageId.STAGE_3]: Map,
+                              [StageId.STAGE_4]: RefreshCcw,
+                              [StageId.STAGE_5]: Ghost
+                          }[config.id] || Map;
+
                           return (
                               <button 
                                 key={config.id}
                                 disabled={locked}
                                 onClick={() => onStartStage(config.id)}
-                                className={`group relative aspect-[3/4] rounded-2xl border-2 flex flex-col p-6 transition-all hover:scale-[1.02] ${locked ? 'bg-slate-950 border-slate-800 opacity-60 grayscale cursor-not-allowed' : 'bg-slate-900 border-slate-700 hover:border-blue-500 hover:shadow-2xl hover:shadow-blue-500/20'}`}
+                                className={`
+                                    group relative aspect-[3/4] rounded-2xl border-2 flex flex-col p-6 transition-all overflow-hidden text-left
+                                    ${locked 
+                                        ? 'bg-slate-950 border-slate-900 opacity-60 grayscale cursor-not-allowed' 
+                                        : 'bg-slate-900 border-slate-800 hover:border-blue-500/50 hover:shadow-2xl hover:shadow-blue-500/10 hover:-translate-y-1'
+                                    }
+                                `}
                               >
-                                  <div className="flex justify-between items-start mb-4">
-                                      <div className="text-5xl font-black text-slate-800">{config.id.split('_')[1]}</div>
-                                      {locked ? <Lock size={24} className="text-slate-600" /> : <div className="flex gap-0.5">{Array.from({length:3}).map((_,i) => <Star key={i} size={16} className={i < progress.stars ? "text-yellow-400 fill-yellow-400" : "text-slate-700"} />)}</div>}
-                                  </div>
-                                  <div className="mt-auto">
-                                      <h3 className="text-xl font-black text-white uppercase leading-none mb-2">{config.name}</h3>
-                                      <p className="text-xs text-slate-400 font-medium leading-relaxed">{config.description}</p>
-                                      {progress.completed && <div className="mt-4 inline-flex items-center gap-1.5 px-2 py-1 rounded bg-green-500/10 text-green-400 text-[10px] font-bold uppercase tracking-wider border border-green-500/20"><Check size={12} /> Mission Complete</div>}
+                                  {/* Background Gradient & Icon */}
+                                  {!locked && (
+                                      <>
+                                          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/80 z-10" />
+                                          <div className="absolute -right-8 -bottom-8 text-slate-800/30 group-hover:text-slate-800/50 transition-colors transform group-hover:scale-110 duration-500 rotate-12">
+                                              <StageIcon size={180} strokeWidth={1} />
+                                          </div>
+                                          <div className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity duration-500 bg-gradient-to-br from-transparent to-blue-500/30" />
+                                      </>
+                                  )}
+
+                                  {/* Content */}
+                                  <div className="relative z-20 flex flex-col h-full">
+                                      <div className="flex justify-between items-start mb-4">
+                                          <div className={`text-6xl font-black tracking-tighter ${locked ? 'text-slate-800' : 'text-slate-700 group-hover:text-white/20 transition-colors'}`}>
+                                              {config.id.split('_')[1]}
+                                          </div>
+                                          {locked 
+                                              ? <Lock size={24} className="text-slate-700" /> 
+                                              : <div className="flex gap-0.5">
+                                                  {Array.from({length:3}).map((_,i) => (
+                                                      <Star key={i} size={16} fill={i < progress.stars ? "currentColor" : "none"} className={i < progress.stars ? "text-yellow-400" : "text-slate-800"} />
+                                                  ))}
+                                                </div>
+                                          }
+                                      </div>
+                                      
+                                      <div className="mt-auto">
+                                          <h3 className={`text-2xl font-black uppercase leading-none mb-3 ${locked ? 'text-slate-600' : 'text-white'}`}>
+                                              {config.name}
+                                          </h3>
+                                          <p className={`text-xs font-medium leading-relaxed line-clamp-3 ${locked ? 'text-slate-700' : 'text-slate-400 group-hover:text-slate-300'}`}>
+                                              {config.description}
+                                          </p>
+                                          
+                                          {progress.completed && (
+                                              <div className="mt-4 inline-flex items-center gap-1.5 px-2 py-1 rounded bg-green-500/10 text-green-400 text-[10px] font-bold uppercase tracking-wider border border-green-500/20 shadow-[0_0_10px_rgba(34,197,94,0.1)]">
+                                                  <Check size={12} strokeWidth={3} /> Mission Complete
+                                              </div>
+                                          )}
+                                      </div>
                                   </div>
                               </button>
                           );
@@ -339,9 +389,164 @@ const HUD: React.FC<HUDProps> = ({
           </div>
       )}
 
+      {/* --- STAGE COMPLETE OVERLAY --- */}
+      {gameState.gamePhase === 'STAGE_COMPLETE' && (
+          <div className="absolute inset-0 bg-slate-900/95 flex flex-col items-center justify-center z-50 pointer-events-auto animate-in fade-in zoom-in duration-500">
+              <div className="flex flex-col items-center gap-6 max-w-md w-full">
+                  <div className="flex flex-col items-center">
+                      <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-emerald-400 uppercase tracking-tighter drop-shadow-2xl">Mission Complete</h1>
+                      <div className="text-emerald-500 font-mono tracking-[0.5em] text-sm font-bold mt-2">SECTOR SECURED</div>
+                  </div>
+
+                  {/* Stars */}
+                  <div className="flex gap-4 mb-4">
+                      {Array.from({length: 3}).map((_, i) => {
+                          const currentStageProgress = gameState.stageProgress[gameState.currentStage];
+                          const starCount = currentStageProgress?.stars || 0;
+                          
+                          return (
+                              <Star 
+                                  key={i} 
+                                  size={48} 
+                                  fill={i < starCount ? "#facc15" : "none"} 
+                                  className={i < starCount ? "text-yellow-400 drop-shadow-[0_0_15px_rgba(250,204,21,0.6)]" : "text-slate-800"} 
+                                  strokeWidth={1.5}
+                              />
+                          );
+                      })}
+                  </div>
+
+                  {/* Rewards */}
+                  <div className="bg-slate-800/50 border border-slate-700 p-6 rounded-2xl w-full flex flex-col gap-4">
+                      <div className="flex justify-between items-center border-b border-slate-700 pb-4">
+                          <span className="text-slate-400 uppercase font-bold text-xs tracking-wider">Data Cores Earned</span>
+                          <div className="flex items-center gap-2 text-emerald-400 font-black text-xl">
+                              <Database size={20} />
+                              +{gameState.stats.coresEarned || 0}
+                          </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                          <div className="flex flex-col">
+                              <span className="text-[10px] text-slate-500 uppercase font-bold">Enemies Neutralized</span>
+                              <span className="text-white font-mono text-lg">{gameState.stats.enemiesKilled}</span>
+                          </div>
+                          <div className="flex flex-col">
+                              <span className="text-[10px] text-slate-500 uppercase font-bold">Total Credits</span>
+                              <span className="text-yellow-400 font-mono text-lg">{gameState.stats.totalGoldEarned}</span>
+                          </div>
+                          <div className="flex flex-col">
+                              <span className="text-[10px] text-slate-500 uppercase font-bold">Lives Remaining</span>
+                              <span className="text-red-400 font-mono text-lg">{Math.floor(gameState.lives)}</span>
+                          </div>
+                          <div className="flex flex-col">
+                              <span className="text-[10px] text-slate-500 uppercase font-bold">Time Elapsed</span>
+                              <span className="text-blue-400 font-mono text-lg">{((gameState.stats.endTime - gameState.stats.startTime) / 1000 / 60).toFixed(1)}m</span>
+                          </div>
+                      </div>
+                  </div>
+
+                  <button onClick={onGoToStageSelect} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 px-8 rounded-xl shadow-lg shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2 w-full">
+                      <ChevronLeft size={20} /> RETURN TO COMMAND
+                  </button>
+              </div>
+          </div>
+      )}
+
+      {/* --- GAME OVER OVERLAY --- */}
+      {gameState.gamePhase === 'GAME_OVER' && (
+          <div className="absolute inset-0 bg-red-950/90 flex flex-col items-center justify-center z-50 pointer-events-auto animate-in fade-in zoom-in duration-500">
+              <div className="flex flex-col items-center gap-8 max-w-md w-full text-center">
+                  <div className="flex flex-col items-center">
+                      <AlertCircle size={64} className="text-red-500 mb-4 animate-pulse" />
+                      <h1 className="text-5xl font-black text-white uppercase tracking-tighter drop-shadow-2xl">Mission Failed</h1>
+                      <div className="text-red-400 font-mono tracking-[0.5em] text-sm font-bold mt-2">CORE DESTROYED</div>
+                  </div>
+
+                  <div className="bg-red-900/20 border border-red-500/30 p-6 rounded-2xl w-full">
+                      <div className="flex flex-col items-center gap-2">
+                          <span className="text-slate-400 uppercase font-bold text-xs tracking-wider">Wave Reached</span>
+                          <span className="text-white font-black text-4xl">{gameState.wave} <span className="text-lg text-slate-500">/ {totalWaves}</span></span>
+                      </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3 w-full">
+                      <button onClick={onReset} className="bg-white text-red-900 hover:bg-slate-200 font-bold py-4 rounded-xl shadow-lg transition-all hover:scale-105 flex items-center justify-center gap-2">
+                          <RefreshCcw size={20} /> RETRY MISSION
+                      </button>
+                      <button onClick={onGoToStageSelect} className="bg-transparent border border-red-500/50 text-red-300 hover:text-white hover:border-white font-bold py-4 rounded-xl transition-all hover:scale-105 flex items-center justify-center gap-2">
+                          ABORT TO MENU
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* --- MAIN HUD (Only Visible in Playing/Boss Phases) --- */}
       {isPlaying && (
         <>
+            {/* AUGMENT SELECTION OVERLAY */}
+            {gameState.isChoosingAugment && (
+                <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center z-50 pointer-events-auto animate-in fade-in duration-300">
+                    <div className="flex flex-col items-center gap-8 max-w-5xl w-full px-4">
+                        <div className="text-center">
+                            <h2 className="text-4xl font-black text-white uppercase tracking-tighter mb-2 drop-shadow-lg">System Upgrade Available</h2>
+                            <p className="text-slate-400 font-mono text-sm tracking-widest">SELECT AN ENHANCEMENT PROTOCOL</p>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
+                            {gameState.augmentChoices.map((aug) => {
+                                const isLegendary = aug.rarity === 'LEGENDARY';
+                                const isRare = aug.rarity === 'RARE';
+                                const borderColor = isLegendary ? 'border-amber-500' : isRare ? 'border-blue-500' : 'border-slate-600';
+                                const bgColor = isLegendary ? 'bg-amber-950/80' : isRare ? 'bg-blue-950/80' : 'bg-slate-900/80';
+                                const textColor = isLegendary ? 'text-amber-400' : isRare ? 'text-blue-400' : 'text-slate-300';
+                                
+                                return (
+                                    <button 
+                                        key={aug.id}
+                                        onClick={() => onPickAugment(aug)}
+                                        className={`
+                                            group relative flex flex-col p-6 rounded-2xl border-2 ${borderColor} ${bgColor} 
+                                            hover:scale-105 transition-all duration-300 text-left 
+                                            hover:shadow-2xl hover:shadow-${isLegendary ? 'amber' : isRare ? 'blue' : 'slate'}-500/30
+                                            overflow-hidden
+                                        `}
+                                    >
+                                        <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                                        
+                                        <div className="flex justify-between items-start mb-4 relative z-10">
+                                            <div className={`p-3 rounded-xl bg-black/30 border border-white/10 ${textColor}`}>
+                                                <Cpu size={32} />
+                                            </div>
+                                            <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded bg-black/50 border border-white/10 ${textColor}`}>
+                                                {aug.rarity}
+                                            </span>
+                                        </div>
+                                        
+                                        <h3 className="text-xl font-black text-white uppercase leading-none mb-3 group-hover:text-white transition-colors relative z-10">{aug.name}</h3>
+                                        <p className="text-xs text-slate-300 font-medium leading-relaxed group-hover:text-white transition-colors relative z-10 flex-grow">{aug.description}</p>
+                                        
+                                        <div className="mt-auto pt-6 w-full relative z-10">
+                                            <div className={`
+                                                w-full py-3 rounded-xl font-black text-center text-xs uppercase tracking-widest transition-all
+                                                ${isLegendary 
+                                                    ? 'bg-amber-600 text-white group-hover:bg-amber-500 shadow-lg shadow-amber-900/20' 
+                                                    : isRare 
+                                                        ? 'bg-blue-600 text-white group-hover:bg-blue-500 shadow-lg shadow-blue-900/20' 
+                                                        : 'bg-slate-700 text-slate-300 group-hover:bg-slate-600'}
+                                            `}>
+                                                Install Protocol
+                                            </div>
+                                        </div>
+                                    </button>
+                                )
+                            })}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <BossHealthBar gameState={gameState} />
             <AbilityHotbar gameState={gameState} onBatchTrigger={onBatchTrigger} />
 
