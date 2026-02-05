@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
-import { GameState, Enemy, Tower, Projectile, Effect, DamageNumber, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType, StageId, Boss, BossAbilityType, DirectorActionType, Hazard, MetaProgress, SupplyDrop } from './types';
+import { GameState, Enemy, Tower, Projectile, Effect, DamageNumber, TowerType, EnemyType, Vector3Tuple, TechPath, PassiveType, ActiveAbilityType, TargetPriority, Augment, AugmentType, StageId, Boss, BossAbilityType, DirectorActionType, Hazard, MetaProgress, SupplyDrop, AchievementEvent } from './types';
 import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_MATRIX, AUGMENT_POOL, STAGE_CONFIGS, getWaveDefinition, INITIAL_STAGE_PROGRESS, INITIAL_META_PROGRESS, TECH_PATH_INFO, TACTICAL_INTEL_POOL, STAGE_CORE_REWARDS, DIRECTOR_CONFIG } from './constants';
 import HUD from './components/HUD';
 import Scene from './components/Scene';
@@ -14,6 +14,7 @@ import { saveGame, loadGame, clearSave, hasSaveData } from './saveSystem';
 import { getWaveIntel } from './geminiService';
 import { useGameLoop } from './hooks/simulation/useGameLoop';
 import { getAppliedMetaEffects } from './metaUpgrades';
+import { checkAchievements } from './achievements';
 
 const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>({
@@ -52,7 +53,6 @@ const App: React.FC = () => {
         enemiesKilled: 0,
         towersSold: 0,
         livesLostThisRun: 0,
-        livesLostThisWave: 0,
         waveStreakNoLoss: 0,
         towersBuiltByType: {},
         abilitiesUsedThisRun: [],
@@ -80,7 +80,8 @@ const App: React.FC = () => {
     directorScaling: 1,
     directorGoldBonus: 1,
     directorCooldownMult: 1,
-    achievementToastQueue: []
+    achievementToastQueue: [],
+    pendingAchievementEvents: []
   });
 
   const [selectedTowerType, setSelectedTowerType] = useState<TowerType>(TowerType.BASIC);
@@ -117,7 +118,7 @@ const App: React.FC = () => {
         setGameState(prev => {
             if (prev.gamePhase === 'BOSS_DEATH' && prev.bossDeathTimer <= 0) {
                  const nextStageProgress = { ...prev.stageProgress };
-                 const nextMetaProgress = { ...prev.metaProgress };
+                 let nextMetaProgress = { ...prev.metaProgress };
                  const nextStats = { ...prev.stats };
                  nextStats.endTime = Date.now();
                  
@@ -150,6 +151,22 @@ const App: React.FC = () => {
                  nextMetaProgress.stats.totalPlayTime += (nextStats.endTime - nextStats.startTime);
                  nextStats.coresEarned = earnedCores;
 
+                 // STAGE_COMPLETE Achievement Check
+                 const stageCompleteEvent: AchievementEvent = {
+                    type: 'STAGE_COMPLETE',
+                    stageId: prev.currentStage,
+                    stats: nextStats
+                 };
+
+                 const { unlocked: finalUnlocked, updatedMeta: finalMeta } = checkAchievements(
+                    [stageCompleteEvent],
+                    { ...prev, stats: nextStats },
+                    nextMetaProgress
+                 );
+                 
+                 nextMetaProgress = finalMeta;
+                 const stageToasts = finalUnlocked.map(ach => ({ achievement: ach, timestamp: Date.now() }));
+
                  saveGame(nextStageProgress, nextMetaProgress);
 
                  return {
@@ -160,7 +177,8 @@ const App: React.FC = () => {
                      activeBoss: null,
                      stageProgress: nextStageProgress,
                      metaProgress: nextMetaProgress,
-                     stats: nextStats
+                     stats: nextStats,
+                     achievementToastQueue: [...prev.achievementToastQueue, ...stageToasts]
                  };
             }
 
@@ -374,7 +392,11 @@ const App: React.FC = () => {
                       ...prev.stats.towersBuiltByType,
                       [selectedTowerType]: (prev.stats.towersBuiltByType[selectedTowerType] || 0) + 1
                   }
-              }
+              },
+              pendingAchievementEvents: [
+                  ...prev.pendingAchievementEvents,
+                  { type: 'TOWER_PLACED', towerType: selectedTowerType }
+              ]
           }));
           setPendingPlacement(null);
       }
@@ -388,8 +410,14 @@ const App: React.FC = () => {
       const newHazards: Hazard[] = [];
       let modTower = { ...tower };
 
-      modTower.abilityCooldown = config.cooldown * prev.directorCooldownMult;
-      modTower.abilityMaxCooldown = config.cooldown * prev.directorCooldownMult;
+      // Apply Meta Multipliers
+      const tech = tower.techPath;
+      const dmgMult = prev.metaEffects.abilityDamageMultiplier[tech] || 1;
+      const cdMult = prev.metaEffects.abilityCooldownMultiplier[tech] || 1;
+      const durMult = prev.metaEffects.abilityDurationMultiplier[tech] || 1;
+
+      modTower.abilityCooldown = config.cooldown * prev.directorCooldownMult * cdMult;
+      modTower.abilityMaxCooldown = config.cooldown * prev.directorCooldownMult * cdMult;
 
       if (config.type === 'INSTANT_AOE') {
           // ERUPTION or TEMPORAL_ANCHOR
@@ -399,9 +427,9 @@ const App: React.FC = () => {
           prev.enemies.forEach(e => {
              const dist = Math.sqrt(Math.pow(e.position.x - tower.position.x, 2) + Math.pow(e.position.z - tower.position.z, 2));
              if (dist <= (config.range || 5)) {
-                 if (type === ActiveAbilityType.ERUPTION) e.health -= (config.damage || 0);
+                 if (type === ActiveAbilityType.ERUPTION) e.health -= ((config.damage || 0) * dmgMult);
                  if (type === ActiveAbilityType.TEMPORAL_ANCHOR) {
-                     e.freezeTimer = config.duration;
+                     e.freezeTimer = (config.duration || 4000) * durMult;
                      e.frozen = 0;
                  }
              }
@@ -413,7 +441,7 @@ const App: React.FC = () => {
               newEffects.push({ id: Math.random().toString(), type: 'ORBITAL_STRIKE', position: targetPos, color: config.color, scale: config.range || 4, lifetime: 60, maxLifetime: 60 });
               prev.enemies.forEach(e => {
                   const d = Math.sqrt(Math.pow(e.position.x - targetPos.x, 2) + Math.pow(e.position.z - targetPos.z, 2));
-                  if (d <= (config.range || 4)) e.health -= (config.damage || 0);
+                  if (d <= (config.range || 4)) e.health -= ((config.damage || 0) * dmgMult);
               });
           }
           else if (type === ActiveAbilityType.NAPALM || type === ActiveAbilityType.SINGULARITY) {
@@ -422,8 +450,8 @@ const App: React.FC = () => {
                    type: type === ActiveAbilityType.NAPALM ? 'NAPALM' : 'SINGULARITY',
                    position: targetPos,
                    radius: config.range || 4,
-                   duration: config.duration || 5000,
-                   value: config.value || config.damage || 0,
+                   duration: (config.duration || 5000) * durMult,
+                   value: type === ActiveAbilityType.NAPALM ? ((config.value || config.damage || 0) * dmgMult) : (config.value || 0.1),
                    color: config.color
                });
           }
@@ -438,7 +466,7 @@ const App: React.FC = () => {
           
           modTower.activeBuffs.push({
               type: buffType as any,
-              duration: config.duration,
+              duration: config.duration ? config.duration * durMult : undefined,
               stacks: type === ActiveAbilityType.IGNITION_BURST ? 30 : undefined
           });
           
@@ -471,18 +499,27 @@ const App: React.FC = () => {
 
           const newEffects: Effect[] = [...prev.effects];
           const newHazards: Hazard[] = [...prev.hazards];
+          const abilityEvents: AchievementEvent[] = [];
+          
           const newTowers = prev.towers.map(t => {
               const cfg = ABILITY_MATRIX[t.type][t.techPath];
               if (cfg?.id === type && t.abilityCooldown <= 0) {
                   const res = executeAbility(prev, t, type);
                   newEffects.push(...res.newEffects);
                   newHazards.push(...res.newHazards);
+                  abilityEvents.push({ type: 'ABILITY_USED', abilityType: type, towerType: t.type });
                   return res.modifiedTower;
               }
               return t;
           });
 
-          return { ...prev, towers: newTowers, effects: newEffects, hazards: newHazards };
+          return { 
+              ...prev, 
+              towers: newTowers, 
+              effects: newEffects, 
+              hazards: newHazards,
+              pendingAchievementEvents: [...prev.pendingAchievementEvents, ...abilityEvents]
+          };
       });
   }, []);
 
@@ -506,7 +543,11 @@ const App: React.FC = () => {
               towers: newTowers, 
               effects: [...prev.effects, ...res.newEffects], 
               hazards: [...prev.hazards, ...res.newHazards],
-              stats: { ...prev.stats, abilitiesUsed: prev.stats.abilitiesUsed + 1 }
+              stats: { ...prev.stats, abilitiesUsed: prev.stats.abilitiesUsed + 1 },
+              pendingAchievementEvents: [
+                  ...prev.pendingAchievementEvents, 
+                  { type: 'ABILITY_USED', abilityType: cfg.id as ActiveAbilityType, towerType: tower.type }
+              ]
           };
       });
   };
@@ -536,7 +577,11 @@ const App: React.FC = () => {
               effects: [...prev.effects, ...res.newEffects],
               hazards: [...prev.hazards, ...res.newHazards],
               targetingAbility: null,
-              stats: { ...prev.stats, abilitiesUsed: prev.stats.abilitiesUsed + 1 }
+              stats: { ...prev.stats, abilitiesUsed: prev.stats.abilitiesUsed + 1 },
+              pendingAchievementEvents: [
+                  ...prev.pendingAchievementEvents, 
+                  { type: 'ABILITY_USED', abilityType: type, towerType: tower.type }
+              ]
           };
       });
   };
@@ -574,7 +619,6 @@ const App: React.FC = () => {
               // Reset run specific stats
               towersSold: 0,
               livesLostThisRun: 0,
-              livesLostThisWave: 0,
               waveStreakNoLoss: 0,
               towersBuiltByType: {},
               abilitiesUsedThisRun: [],
@@ -596,7 +640,8 @@ const App: React.FC = () => {
           directorGoldBonus: 1,
           directorCooldownMult: 1,
           directorAction: 'NONE',
-          waveStats: { livesLostThisWave: 0, waveStartTime: 0, waveEndTime: 0, consecutiveCleanWaves: 0 }
+          waveStats: { livesLostThisWave: 0, waveStartTime: 0, waveEndTime: 0, consecutiveCleanWaves: 0 },
+          pendingAchievementEvents: []
       }));
   };
   
@@ -621,7 +666,11 @@ const App: React.FC = () => {
               stats: {
                   ...prev.stats,
                   suppliesCollectedThisRun: prev.stats.suppliesCollectedThisRun + 1
-              }
+              },
+              pendingAchievementEvents: [
+                  ...prev.pendingAchievementEvents,
+                  { type: 'SUPPLY_COLLECTED', value: drop.value }
+              ]
           };
       });
   };
@@ -730,7 +779,15 @@ const App: React.FC = () => {
                     }
                     return t;
                 });
-                return { ...prev, gold: prev.gold - cost, towers };
+                return { 
+                    ...prev, 
+                    gold: prev.gold - cost, 
+                    towers,
+                    pendingAchievementEvents: [
+                        ...prev.pendingAchievementEvents,
+                        { type: 'TOWER_UPGRADED', towerId: id, towerType: tower.type, newLevel: tower.level + 1, techPath: path }
+                    ]
+                };
             });
         }}
         onDeselectTower={() => setGameState(p => ({ ...p, selectedTowerId: null }))}
@@ -744,7 +801,11 @@ const App: React.FC = () => {
                     gold: prev.gold + Math.floor(t.totalInvested * sellRatio),
                     towers: prev.towers.filter(t => t.id !== id),
                     selectedTowerId: null,
-                    stats: { ...prev.stats, towersSold: prev.stats.towersSold + 1 }
+                    stats: { ...prev.stats, towersSold: prev.stats.towersSold + 1 },
+                    pendingAchievementEvents: [
+                        ...prev.pendingAchievementEvents,
+                        { type: 'TOWER_SOLD', towerId: id }
+                    ]
                 };
             });
         }}
@@ -779,7 +840,8 @@ const App: React.FC = () => {
                     ...p, 
                     stageProgress: loaded.stageProgress, 
                     metaProgress: loaded.metaProgress,
-                    gamePhase: 'STAGE_SELECT' 
+                    gamePhase: 'STAGE_SELECT',
+                    pendingAchievementEvents: []
                 }));
             }
         }}
@@ -790,7 +852,8 @@ const App: React.FC = () => {
                 stageProgress: INITIAL_STAGE_PROGRESS,
                 metaProgress: INITIAL_META_PROGRESS,
                 metaEffects: getAppliedMetaEffects(INITIAL_META_PROGRESS),
-                gamePhase: 'STAGE_SELECT'
+                gamePhase: 'STAGE_SELECT',
+                pendingAchievementEvents: []
             }));
         }}
         totalWaves={STAGE_CONFIGS[gameState.currentStage].waves}

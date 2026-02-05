@@ -280,7 +280,7 @@ export const STAGE_CONFIGS: Record<StageId, StageConfig> = {
         gridColor: "#022c22", 
         pathColor: "#064e3b", 
         fogColor: "#064e3b",
-        fogDensity: 0.08, 
+        fogDensity: 0.04, // Reduced from 0.08
         ambientIntensity: 0.3,
         particleType: 'dust'
     }
@@ -364,8 +364,12 @@ export const getWaveDefinition = (stageId: StageId, waveNumber: number): WaveDef
     const groups: WaveGroup[] = [];
     let intel = "";
 
+    // New Enemy Introduction Logic
+    const p1 = 500;
+    const p2 = 4000;
+    const p3 = 7000;
+
     if (waveNumber <= 5) {
-        const p1 = 500;
         if (waveNumber === 1) {
             groups.push(grp(EnemyType.BASIC, c(5), p1, 1000));
             intel = "Scout party detected. Single formation.";
@@ -384,45 +388,64 @@ export const getWaveDefinition = (stageId: StageId, waveNumber: number): WaveDef
         }
     } 
     else if (waveNumber <= 15) {
-        const p1 = 0;
-        const p2 = 4000; 
-        
-        if (waveNumber <= 10) {
-            groups.push(grp(EnemyType.BASIC, c(10 + waveNumber), p1, 600)); 
-            groups.push(grp(EnemyType.FAST, c(5 + (waveNumber-5)), p1 + 500, 300));
-            groups.push(grp(EnemyType.FAST, c(4 + (waveNumber-5)), p2, 150, 1));
-            
-            if (waveNumber === 6) intel = "Multiple contacts. Fast movers leading the charge.";
+        if (waveNumber === 6) {
+             groups.push(grp(EnemyType.SWARM, c(24), p1, 100, 4));
+             groups.push(grp(EnemyType.BASIC, c(5), p1 + 1000, 800));
+             intel = "Swarm signature detected. Area denial weapons recommended.";
+        } else if (waveNumber === 8) {
+             groups.push(grp(EnemyType.SHIELDED, c(5), p1, 1500));
+             groups.push(grp(EnemyType.BASIC, c(10), p1 + 2000, 500));
+             intel = "Shielded units detected. Sustained fire recommended to prevent regeneration.";
+        } else if (waveNumber === 10) {
+             groups.push(grp(EnemyType.PHASER, c(6), p1, 2000));
+             groups.push(grp(EnemyType.FAST, c(10), p1 + 500, 500));
+             intel = "Phase-capable hostiles inbound. Rear defense positioning advised.";
+        } else if (waveNumber === 12) {
+             groups.push(grp(EnemyType.BASIC, c(8), p1, 600));
+             groups.push(grp(EnemyType.HEALER, c(2), p1 + 1000, 2000));
+             groups.push(grp(EnemyType.FAST, c(6), p2, 300));
+             intel = "Medical support units embedded in formation. Prioritize healer elimination.";
+        } else if (waveNumber === 14) {
+             groups.push(grp(EnemyType.BASIC, c(10), p1, 500));
+             groups.push(grp(EnemyType.BOMBER, c(4), p2, 2000));
+             intel = "Explosive units detected. Maintain tower spacing to minimize disable radius.";
         } else {
-            groups.push(grp(EnemyType.BASIC, c(15), p1, 500));
-            groups.push(grp(EnemyType.SPLITTER, c(3), p1 + 1000, 1500));
-            const tanks = 1 + Math.floor((waveNumber - 10) / 2);
-            groups.push(grp(EnemyType.TANK, c(tanks), p2, 3000)); 
-            groups.push(grp(EnemyType.FAST, c(tanks * 3), p2, 200, 3)); 
-            
-            if (waveNumber === 11) intel = "Heavy armor detected. Escort configuration.";
+             // Filler waves 7, 9, 11, 13, 15
+             groups.push(grp(EnemyType.BASIC, c(15), p1, 500));
+             groups.push(grp(EnemyType.FAST, c(8), p1 + 1000, 300));
+             if (waveNumber >= 11) groups.push(grp(EnemyType.TANK, c(2), p2, 3000));
         }
     }
     else if (waveNumber <= 25) {
-        const p1 = 0;
-        const p2 = 3000;
-        const p3 = 7000;
         const difficulty = waveNumber - 15;
-        
-        groups.push(grp(EnemyType.BASIC, c(15 + difficulty), p1, 300, 2));
-        groups.push(grp(EnemyType.FAST, c(8 + difficulty), p1 + 500, 200));
-        groups.push(grp(EnemyType.TANK, c(2 + Math.floor(difficulty/3)), p2, 2000));
-        groups.push(grp(EnemyType.SPLITTER, c(4 + Math.floor(difficulty/2)), p2 + 500, 800));
-        groups.push(grp(EnemyType.FAST, c(10 + difficulty), p3, 100, 2));
-        groups.push(grp(EnemyType.BASIC, c(10), p3 + 1000, 200, 5)); 
-        
-        if (waveNumber === 25) intel = "MAXIMUM THREAT. Multiple heavy columns inbound.";
+        if (waveNumber === 16) {
+             groups.push(grp(EnemyType.ARMORED, c(4), p1, 2500));
+             groups.push(grp(EnemyType.SWARM, c(12), p1 + 2000, 150));
+             intel = "Heavy armor inbound. Standard munitions ineffective.";
+        } else {
+             // Mixed Waves
+             groups.push(grp(EnemyType.BASIC, c(15 + difficulty), p1, 300, 2));
+             groups.push(grp(EnemyType.FAST, c(8 + difficulty), p1 + 500, 200));
+             groups.push(grp(EnemyType.TANK, c(2 + Math.floor(difficulty/3)), p2, 2000));
+             groups.push(grp(EnemyType.SPLITTER, c(4 + Math.floor(difficulty/2)), p2 + 500, 800));
+             
+             // Add variety
+             if (waveNumber % 3 === 0) groups.push(grp(EnemyType.SHIELDED, c(5), p3, 1000));
+             if (waveNumber % 4 === 0) groups.push(grp(EnemyType.HEALER, c(3), p3, 2000));
+             if (waveNumber % 5 === 0) groups.push(grp(EnemyType.PHASER, c(6), p3, 1500));
+             if (waveNumber % 2 === 0) groups.push(grp(EnemyType.BOMBER, c(3), p2, 2500));
+             
+             if (waveNumber === 25) intel = "MAXIMUM THREAT. Multiple heavy columns inbound.";
+        }
     } 
     else {
+        // Endless / Late Game scaling
         const loop = waveNumber - 25;
         groups.push(grp(EnemyType.TANK, c(2 + loop), 0, 1000));
-        groups.push(grp(EnemyType.FAST, c(20 + loop * 2), 1000, 100, 2));
-        groups.push(grp(EnemyType.SPLITTER, c(10 + loop), 3000, 500));
+        groups.push(grp(EnemyType.ARMORED, c(4 + Math.floor(loop/2)), 1000, 1500));
+        groups.push(grp(EnemyType.HEALER, c(2 + Math.floor(loop/3)), 2000, 2000));
+        groups.push(grp(EnemyType.FAST, c(20 + loop * 2), 3000, 100, 2));
+        groups.push(grp(EnemyType.SPLITTER, c(10 + loop), 5000, 500));
     }
 
     if (!intel) intel = TACTICAL_INTEL_POOL[Math.floor(Math.random() * TACTICAL_INTEL_POOL.length)];
@@ -479,7 +502,12 @@ export const TACTICAL_INTEL_POOL = [
   "Swarm learning. Pathing adjusted.",
   "Energy spikes in perimeter towers.",
   "Splitter units detected. Prepare AOE countermeasures.",
-  "Artillery recommended for dense clusters."
+  "Artillery recommended for dense clusters.",
+  "Shielded units detected. Sustained fire recommended.",
+  "Medical support units embedded. Prioritize healer elimination.",
+  "Phase-capable hostiles inbound. Rear defense critical.",
+  "Explosive units detected. Check tower spacing.",
+  "Heavy armor column approaching. Artillery support critical."
 ];
 
 export const AUGMENT_POOL: Augment[] = [
@@ -851,5 +879,54 @@ export const ENEMY_STATS = {
       speed: 2.5,
       goldReward: 5,
       color: '#5eead4'
+  },
+  // New Enemies
+  [EnemyType.SHIELDED]: {
+    health: 80,
+    shield: 60,
+    shieldRegen: 10,
+    shieldRegenDelay: 3000,
+    speed: 1.2,
+    goldReward: 25,
+    color: '#3b82f6'
+  },
+  [EnemyType.HEALER]: {
+    health: 40,
+    speed: 1.0,
+    goldReward: 35,
+    color: '#22c55e',
+    healRange: 3,
+    healRate: 15
+  },
+  [EnemyType.PHASER]: {
+    health: 45,
+    speed: 1.4,
+    goldReward: 20,
+    color: '#a855f7',
+    phaseDistance: 4,
+    phaseCooldown: 5000,
+    phaseChargeTime: 1000
+  },
+  [EnemyType.BOMBER]: {
+    health: 60,
+    speed: 1.8,
+    goldReward: 30,
+    color: '#f97316',
+    explosionRadius: 2.5,
+    explosionDisableDuration: 4000,
+    explosionDamageToEnemies: 30
+  },
+  [EnemyType.ARMORED]: {
+    health: 120,
+    speed: 0.7,
+    goldReward: 45,
+    color: '#64748b',
+    armorReduction: 0.5
+  },
+  [EnemyType.SWARM]: {
+    health: 12,
+    speed: 2.5,
+    goldReward: 3,
+    color: '#fbbf24'
   }
 };

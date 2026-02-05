@@ -10,6 +10,7 @@ import { simulateProjectiles } from './useProjectileSimulation';
 import { processEnemyDeaths } from './useEnemyDeath';
 import { simulateBoss } from './useBossSimulation';
 import { manageWaveState } from './useWaveManager';
+import { simulateHealers } from './useHealerSimulation'; // New Hook
 import { evaluateDirectorState } from './directorSystem';
 import { checkAchievements } from '../../achievements';
 import { DIRECTOR_CONFIG, GRID_SIZE } from '../../constants';
@@ -49,7 +50,9 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
         
         const ctx = buildSimulationContext(prev, TICK_RATE);
         const gameDelta = ctx.tickDelta;
-        const achievementEvents: AchievementEvent[] = [];
+        
+        // Drain pending events from App (placement, upgrades, etc)
+        const achievementEvents: AchievementEvent[] = [...prev.pendingAchievementEvents];
 
         // Clone state for mutation
         let enemies = [...prev.enemies];
@@ -107,37 +110,42 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
         // 1. Tower Stats
         towers = calculateTowerStats(towers, prev.activeAugments, ctx);
 
-        // 2. Hazards
+        // 2. Healers (New)
+        const healerRes = simulateHealers(enemies, ctx);
+        enemies = healerRes.enemies;
+        effects.push(...healerRes.newEffects);
+
+        // 3. Hazards
         const hazRes = simulateHazards(hazards, enemies, ctx);
         hazards = hazRes.hazards;
         enemies = hazRes.enemies;
 
-        // 3. Movement
+        // 4. Movement
         const moveRes = simulateEnemyMovement(enemies, towers, ctx);
         enemies = moveRes.enemies;
+        effects.push(...moveRes.newEffects);
         if (moveRes.livesLost > 0) {
             lives -= moveRes.livesLost;
             stats.livesLostThisRun += moveRes.livesLost;
-            stats.livesLostThisWave += moveRes.livesLost;
+            waveStats.livesLostThisWave += moveRes.livesLost; // Consolidate to waveStats
             stats.waveStreakNoLoss = 0;
         }
 
-        // 4. Combat
+        // 5. Combat
         const combatRes = simulateTowerCombat(towers, enemies, ctx);
         towers = combatRes.towers;
         projectiles.push(...combatRes.newProjectiles);
         damageNumbers.push(...combatRes.newDamageNumbers);
         
-        // 5. Projectiles
+        // 6. Projectiles
         const projRes = simulateProjectiles(projectiles, enemies, ctx);
         projectiles = projRes.projectiles;
         enemies = projRes.enemies;
         effects.push(...projRes.newEffects);
         damageNumbers.push(...projRes.newDamageNumbers);
-        // Map projectile events if needed, for now mainly kill events matter in step 6
 
-        // 6. Deaths
-        const deathRes = processEnemyDeaths(enemies, gold, stats, ctx);
+        // 7. Deaths
+        const deathRes = processEnemyDeaths(enemies, towers, gold, stats, ctx);
         enemies = deathRes.enemies;
         gold = deathRes.gold;
         stats = deathRes.stats;
@@ -150,7 +158,7 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
                     enemyType: e.enemyType as any, 
                     damage: 0, 
                     overkill: 0, 
-                    source: 'TOWER' // Simplified source tracking, implies tower for now
+                    source: 'TOWER' // Simplified source tracking
                 });
             }
             if (e.type === 'BOSS_DEFEATED') {
@@ -159,7 +167,7 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
             }
         });
 
-        // 7. Boss
+        // 8. Boss
         const currentBossRef = enemies.find(e => e.isBoss);
         if (currentBossRef) {
             const bossRes = simulateBoss(enemies, towers, hazards, ctx);
@@ -170,11 +178,11 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
             if (bossRes.announcement) bossAnnouncement = bossRes.announcement;
         }
 
-        // 8. Cleanup
+        // 9. Cleanup
         effects = effects.filter(e => { e.lifetime -= 1 * prev.gameSpeed; return e.lifetime > 0; });
         damageNumbers = damageNumbers.filter(dn => { dn.lifetime -= 1 * prev.gameSpeed; return dn.lifetime > 0; });
 
-        // 9. Wave Manager
+        // 10. Wave Manager
         const waveRes = manageWaveState(enemies, prev.waveStatus, lives, gold, ctx);
         const waveStatus = waveRes.waveStatus;
         gold = waveRes.gold;
@@ -196,7 +204,7 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
             gamePhase = 'GAME_OVER';
         }
 
-        // 10. Achievements
+        // 11. Achievements
         achievementEvents.push({ type: 'GAME_TICK' });
         const { unlocked, updatedMeta } = checkAchievements(achievementEvents, { ...prev, gold, lives, stats, towers }, prev.metaProgress);
         
@@ -213,7 +221,8 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
           activeBoss: updatedBoss,
           ...directorUpdates,
           metaProgress: updatedMeta,
-          achievementToastQueue: [...prev.achievementToastQueue, ...newToasts]
+          achievementToastQueue: [...prev.achievementToastQueue, ...newToasts],
+          pendingAchievementEvents: [] // Clear consumed events
         };
       });
     }, TICK_RATE);

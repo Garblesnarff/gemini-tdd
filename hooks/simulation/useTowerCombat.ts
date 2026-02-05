@@ -1,5 +1,5 @@
 
-import { Tower, Enemy, Projectile, TowerType, TargetPriority, DamageNumber, ActiveAbilityType } from '../../types';
+import { Tower, Enemy, Projectile, TowerType, TargetPriority, DamageNumber, ActiveAbilityType, EnemyType } from '../../types';
 import { SimulationContext } from './types';
 import { sortByPriority, getDistance2D } from './simulationUtils';
 import { TOWER_STATS, ABILITY_MATRIX } from '../../constants';
@@ -37,11 +37,6 @@ export function simulateTowerCombat(towers: Tower[], enemies: Enemy[], ctx: Simu
 
         // Projectile Towers or Hitscan
         if (tower.type === TowerType.SNIPER || tower.type === TowerType.ARTILLERY || tower.type === TowerType.FAST) {
-            // NOTE: Fast towers now use projectiles to support Ignition/Chain FX better visually, 
-            // OR we can keep Hitscan but spawn "fake" projectiles for FX. 
-            // Let's use Hitscan for FAST unless it's Chain Lightning.
-            // Actually, let's treat FAST as Hitscan generally, but spawn visual trail for Chain.
-            // Wait, TOWER_STATS define projectileSpeed for all. Let's use projectiles for all for consistent mechanics (Pierce, Chain).
             
             const stats = TOWER_STATS[tower.type];
           
@@ -96,13 +91,13 @@ export function simulateTowerCombat(towers: Tower[], enemies: Enemy[], ctx: Simu
 
         } else {
           // BASIC Tower (Hitscan)
-          const dmg = applyDamage(target, tower.damage, ctx);
-          if (dmg > 0) {
+          const result = applyDamage(target, tower.damage, ctx);
+          if (result.damage > 0 || result.shieldHit) {
              newDamageNumbers.push({
                  id: Math.random().toString(),
                  position: { ...target.position, y: 1 },
-                 value: dmg,
-                 color: '#3b82f6',
+                 value: result.damage,
+                 color: result.shieldHit ? '#60a5fa' : result.isArmorHit ? '#94a3b8' : '#3b82f6',
                  lifetime: 20,
                  maxLifetime: 20,
                  isCritical: false
@@ -116,13 +111,23 @@ export function simulateTowerCombat(towers: Tower[], enemies: Enemy[], ctx: Simu
   return { towers, newProjectiles, newDamageNumbers };
 }
 
-function applyDamage(target: Enemy, rawDamage: number, ctx: SimulationContext): number {
+function applyDamage(target: Enemy, rawDamage: number, ctx: SimulationContext, sourceType?: TowerType): { damage: number, shieldHit: boolean, isArmorHit: boolean } {
     let damage = rawDamage;
-    
+    let isArmorHit = false;
+    let shieldHit = false;
+
     // Check for Void Mark on Enemy
     const mark = target.debuffs?.find(d => d.type === 'VOID_MARK');
     if (mark) {
         damage *= (mark.value || 1.5);
+    }
+
+    // Armor Reduction
+    if (target.type === EnemyType.ARMORED) {
+        if (sourceType !== TowerType.ARTILLERY) { // Artillery pierces armor
+             damage *= (1 - (target.armorReduction || 0.5));
+             isArmorHit = true;
+        }
     }
 
     // Boss Resistances
@@ -132,6 +137,20 @@ function applyDamage(target: Enemy, rawDamage: number, ctx: SimulationContext): 
         if (target.isShielded) damage = 0;
     }
 
+    // Shield Logic
+    if (target.shield && target.shield > 0) {
+        shieldHit = true;
+        if (damage >= target.shield) {
+            damage -= target.shield;
+            target.shield = 0;
+            // Shield Break Effect? (Handled in visual layer by checking state or event)
+        } else {
+            target.shield -= damage;
+            damage = 0;
+        }
+        target.shieldRegenDelay = 0; // Reset regen delay
+    }
+
     target.health -= damage;
-    return damage;
+    return { damage, shieldHit, isArmorHit };
 }

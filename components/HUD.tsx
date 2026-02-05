@@ -227,7 +227,7 @@ const HUD: React.FC<HUDProps> = ({
   onReset,
   onUpgradeTower,
   onDeselectTower,
-  onSellTower, 
+  onSellTower,
   onSetSpeed,
   onTriggerAbility,
   pendingPlacement,
@@ -316,70 +316,21 @@ const HUD: React.FC<HUDProps> = ({
                       {Object.values(STAGE_CONFIGS).map(config => {
                           const progress = gameState.stageProgress[config.id];
                           const locked = !progress.unlocked;
-                          
-                          // Visual flair: Assign icon based on stage ID
-                          const StageIcon = {
-                              [StageId.STAGE_1]: Shield,
-                              [StageId.STAGE_2]: Swords,
-                              [StageId.STAGE_3]: Map,
-                              [StageId.STAGE_4]: RefreshCcw,
-                              [StageId.STAGE_5]: Ghost
-                          }[config.id] || Map;
-
                           return (
                               <button 
                                 key={config.id}
                                 disabled={locked}
                                 onClick={() => onStartStage(config.id)}
-                                className={`
-                                    group relative aspect-[3/4] rounded-2xl border-2 flex flex-col p-6 transition-all overflow-hidden text-left
-                                    ${locked 
-                                        ? 'bg-slate-950 border-slate-900 opacity-60 grayscale cursor-not-allowed' 
-                                        : 'bg-slate-900 border-slate-800 hover:border-blue-500/50 hover:shadow-2xl hover:shadow-blue-500/10 hover:-translate-y-1'
-                                    }
-                                `}
+                                className={`group relative aspect-[3/4] rounded-2xl border-2 flex flex-col p-6 transition-all hover:scale-[1.02] ${locked ? 'bg-slate-950 border-slate-800 opacity-60 grayscale cursor-not-allowed' : 'bg-slate-900 border-slate-700 hover:border-blue-500 hover:shadow-2xl hover:shadow-blue-500/20'}`}
                               >
-                                  {/* Background Gradient & Icon */}
-                                  {!locked && (
-                                      <>
-                                          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/80 z-10" />
-                                          <div className="absolute -right-8 -bottom-8 text-slate-800/30 group-hover:text-slate-800/50 transition-colors transform group-hover:scale-110 duration-500 rotate-12">
-                                              <StageIcon size={180} strokeWidth={1} />
-                                          </div>
-                                          <div className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity duration-500 bg-gradient-to-br from-transparent to-blue-500/30" />
-                                      </>
-                                  )}
-
-                                  {/* Content */}
-                                  <div className="relative z-20 flex flex-col h-full">
-                                      <div className="flex justify-between items-start mb-4">
-                                          <div className={`text-6xl font-black tracking-tighter ${locked ? 'text-slate-800' : 'text-slate-700 group-hover:text-white/20 transition-colors'}`}>
-                                              {config.id.split('_')[1]}
-                                          </div>
-                                          {locked 
-                                              ? <Lock size={24} className="text-slate-700" /> 
-                                              : <div className="flex gap-0.5">
-                                                  {Array.from({length:3}).map((_,i) => (
-                                                      <Star key={i} size={16} fill={i < progress.stars ? "currentColor" : "none"} className={i < progress.stars ? "text-yellow-400" : "text-slate-800"} />
-                                                  ))}
-                                                </div>
-                                          }
-                                      </div>
-                                      
-                                      <div className="mt-auto">
-                                          <h3 className={`text-2xl font-black uppercase leading-none mb-3 ${locked ? 'text-slate-600' : 'text-white'}`}>
-                                              {config.name}
-                                          </h3>
-                                          <p className={`text-xs font-medium leading-relaxed line-clamp-3 ${locked ? 'text-slate-700' : 'text-slate-400 group-hover:text-slate-300'}`}>
-                                              {config.description}
-                                          </p>
-                                          
-                                          {progress.completed && (
-                                              <div className="mt-4 inline-flex items-center gap-1.5 px-2 py-1 rounded bg-green-500/10 text-green-400 text-[10px] font-bold uppercase tracking-wider border border-green-500/20 shadow-[0_0_10px_rgba(34,197,94,0.1)]">
-                                                  <Check size={12} strokeWidth={3} /> Mission Complete
-                                              </div>
-                                          )}
-                                      </div>
+                                  <div className="flex justify-between items-start mb-4">
+                                      <div className="text-5xl font-black text-slate-800">{config.id.split('_')[1]}</div>
+                                      {locked ? <Lock size={24} className="text-slate-600" /> : <div className="flex gap-0.5">{Array.from({length:3}).map((_,i) => <Star key={i} size={16} className={i < progress.stars ? "text-yellow-400 fill-yellow-400" : "text-slate-700"} />)}</div>}
+                                  </div>
+                                  <div className="mt-auto">
+                                      <h3 className="text-xl font-black text-white uppercase leading-none mb-2">{config.name}</h3>
+                                      <p className="text-xs text-slate-400 font-medium leading-relaxed">{config.description}</p>
+                                      {progress.completed && <div className="mt-4 inline-flex items-center gap-1.5 px-2 py-1 rounded bg-green-500/10 text-green-400 text-[10px] font-bold uppercase tracking-wider border border-green-500/20"><Check size={12} /> Mission Complete</div>}
                                   </div>
                               </button>
                           );

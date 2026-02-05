@@ -11,7 +11,13 @@ export enum EnemyType {
   TANK = 'TANK',
   BOSS = 'BOSS',
   SPLITTER = 'SPLITTER',
-  SPLITTER_MINI = 'SPLITTER_MINI'
+  SPLITTER_MINI = 'SPLITTER_MINI',
+  SHIELDED = 'SHIELDED',
+  HEALER = 'HEALER',
+  PHASER = 'PHASER',
+  BOMBER = 'BOMBER',
+  ARMORED = 'ARMORED',
+  SWARM = 'SWARM'
 }
 
 export interface DamageNumber {
@@ -47,6 +53,7 @@ export interface Enemy {
   isElite?: boolean; 
   debuffs: EnemyDebuff[]; // New
   
+  // Boss props
   isBoss?: boolean;
   bossConfig?: BossConfig;
   currentPhase?: number;
@@ -56,6 +63,24 @@ export interface Enemy {
   triggeredSpawnIndices?: number[];
   disabledZone?: { position: Vector3Tuple; radius: number; duration: number };
   activeBuffs?: { type: 'SPEED' | 'REGEN'; duration: number; value: number }[];
+
+  // New Enemy Props
+  shield?: number;
+  maxShield?: number;
+  shieldRegenDelay?: number;
+
+  isHealer?: boolean;
+  healRange?: number;
+  healRate?: number;
+
+  phaseCooldown?: number;
+  phaseCharging?: boolean;
+  phaseProgress?: number; // 0 to 1
+  
+  isBomber?: boolean;
+  explosionRadius?: number;
+
+  armorReduction?: number;
 }
 
 export enum TowerType {
@@ -176,7 +201,7 @@ export interface Projectile {
 
 export interface Effect {
   id: string;
-  type: 'EXPLOSION' | 'SPARK' | 'TEXT' | 'NOVA' | 'FREEZE_WAVE' | 'ORBITAL_STRIKE' | 'PORTAL' | 'BLOCKED' | 'DISABLE_FIELD' | 'CHAIN_ARC' | 'VOID_SIGIL';
+  type: 'EXPLOSION' | 'SPARK' | 'TEXT' | 'NOVA' | 'FREEZE_WAVE' | 'ORBITAL_STRIKE' | 'PORTAL' | 'BLOCKED' | 'DISABLE_FIELD' | 'CHAIN_ARC' | 'VOID_SIGIL' | 'SHIELD_BREAK' | 'HEAL_BEAM' | 'PHASE_BLINK' | 'BOMBER_EXPLOSION' | 'ARMOR_SPARK';
   position: Vector3Tuple;
   targetPosition?: Vector3Tuple; // For Chain Arc
   color: string;
@@ -270,16 +295,14 @@ export interface AchievementProgress {
 export type AchievementEvent = 
   | { type: 'ENEMY_KILLED'; enemyType: EnemyType; damage: number; overkill: number; source: 'TOWER' | 'ABILITY' | 'BURN' }
   | { type: 'BOSS_KILLED'; bossId: string }
-  | { type: 'TOWER_PLACED'; towerType: TowerType }
-  | { type: 'TOWER_UPGRADED'; towerId: string; newLevel: number; techPath: TechPath }
-  | { type: 'TOWER_SOLD'; towerId: string }
-  | { type: 'ABILITY_USED'; abilityType: ActiveAbilityType; kills: number }
   | { type: 'WAVE_COMPLETE'; waveNumber: number; livesLost: number }
-  | { type: 'STAGE_COMPLETE'; stageId: StageId; finalLives: number; finalGold: number; stats: GameStats }
-  | { type: 'SUPPLY_COLLECTED' }
-  | { type: 'AUGMENT_PICKED' }
-  | { type: 'DIRECTOR_STATE_CHANGED'; newState: 'NEUTRAL' | 'PRESSURE' | 'RELIEF' }
-  | { type: 'GAME_TICK' }; 
+  | { type: 'GAME_TICK' }
+  | { type: 'STAGE_COMPLETE'; stageId: StageId; stats: GameStats }
+  | { type: 'TOWER_PLACED'; towerType: TowerType }
+  | { type: 'TOWER_UPGRADED'; towerId: string; towerType: TowerType; newLevel: number; techPath: TechPath }
+  | { type: 'TOWER_SOLD'; towerId: string }
+  | { type: 'SUPPLY_COLLECTED'; value: number }
+  | { type: 'ABILITY_USED'; abilityType: ActiveAbilityType; towerType: TowerType };
 
 // --- META PROGRESSION ---
 
@@ -438,7 +461,7 @@ export interface GameStats {
   // New Tracking for Achievements
   towersSold: number;
   livesLostThisRun: number;
-  livesLostThisWave: number;
+  // Removed livesLostThisWave from here as it's tracked in waveStats
   waveStreakNoLoss: number;
   towersBuiltByType: Record<string, number>;
   abilitiesUsedThisRun: string[]; 
@@ -505,4 +528,5 @@ export interface GameState {
   directorCooldownMult: number;
   
   achievementToastQueue: { achievement: Achievement; timestamp: number }[];
+  pendingAchievementEvents: AchievementEvent[]; // Queue for events outside game loop
 }

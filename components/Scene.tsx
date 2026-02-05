@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Stars, Sky, Environment, Box, Cylinder, Sphere, Float, Sparkles, Icosahedron, Ring, Html, Text, Billboard, Line } from '@react-three/drei';
+import { Stars, Sky, Environment, Box, Cylinder, Sphere, Float, Sparkles, Icosahedron, Ring, Html, Text, Billboard, Line, Octahedron } from '@react-three/drei';
 import * as THREE from 'three';
 import { GameState, TowerType, Vector3Tuple, EnemyType, Tower, Enemy, TechPath, Effect, PassiveType, ActiveAbilityType, Boss, StageEnvironment, DamageNumber, Hazard, SupplyDrop } from '../types';
 import { GRID_SIZE, TOWER_STATS, ENEMY_STATS, TECH_PATH_INFO, PASSIVE_CONFIG } from '../constants';
@@ -68,15 +68,16 @@ const NukeEffect: React.FC<{ position: Vector3Tuple, color: string, progress: nu
   );
 };
 
-const ChainArc: React.FC<{ start: Vector3Tuple, end: Vector3Tuple, color: string, progress: number }> = ({ start, end, color, progress }) => {
+const ChainArc: React.FC<{ start: Vector3Tuple, end: Vector3Tuple, color: string, progress: number, type?: string }> = ({ start, end, color, progress, type }) => {
     const opacity = 1 - progress;
     return (
         <Line 
             points={[[start.x, 0.5, start.z], [end.x, 0.5, end.z]]} 
             color={color} 
-            lineWidth={3 * opacity} 
+            lineWidth={type === 'HEAL_BEAM' ? 2 * opacity : 3 * opacity} 
             transparent 
             opacity={opacity} 
+            dashed={type === 'HEAL_BEAM'}
         />
     )
 }
@@ -108,6 +109,24 @@ const DisableFieldEffect: React.FC<{ position: Vector3Tuple, color: string, prog
         </group>
     );
 };
+
+const BomberExplosion: React.FC<{ position: Vector3Tuple, color: string, progress: number, scale: number }> = ({ position, color, progress, scale }) => {
+    const opacity = 1 - progress;
+    const currentScale = scale * progress;
+    return (
+        <group position={[position.x, 0, position.z]}>
+             <mesh position={[0, 0.5, 0]}>
+                 <sphereGeometry args={[currentScale, 16, 16]} />
+                 <meshBasicMaterial color={color} transparent opacity={opacity * 0.5} />
+             </mesh>
+             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.1, 0]}>
+                 <ringGeometry args={[currentScale * 0.9, currentScale, 32]} />
+                 <meshBasicMaterial color={color} transparent opacity={opacity} />
+             </mesh>
+             <Sparkles count={30} scale={scale * 1.5} size={5} speed={1} opacity={opacity} color={color} />
+        </group>
+    );
+}
 
 const OrbitalStrikeEffect: React.FC<{ position: Vector3Tuple, color: string, progress: number }> = ({ position, color, progress }) => {
     const isFalling = progress < 0.2;
@@ -230,11 +249,13 @@ const DamageNumbersRenderer: React.FC<{ damageNumbers: DamageNumber[] }> = ({ da
 
 const EnemyUnit: React.FC<{ enemy: Enemy }> = ({ enemy }) => {
     const [hovered, setHovered] = useState(false);
-    const isSplitter = enemy.type === EnemyType.SPLITTER;
-    const isMini = enemy.type === EnemyType.SPLITTER_MINI;
     const isElite = enemy.isElite;
     const isBurning = enemy.debuffs?.some(d => d.type === 'BURN');
     const isMarked = enemy.debuffs?.some(d => d.type === 'VOID_MARK');
+    
+    // Geometry/Color based on type
+    const stats = ENEMY_STATS[enemy.type];
+    const color = enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : stats.color;
 
     return (
         <group 
@@ -243,19 +264,63 @@ const EnemyUnit: React.FC<{ enemy: Enemy }> = ({ enemy }) => {
             onPointerOut={() => setHovered(false)}
         >
             <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
-                {isSplitter ? (
+                {enemy.type === EnemyType.SPLITTER ? (
                     <mesh castShadow scale={isElite ? 1.4 : 1}>
                         <dodecahedronGeometry args={[0.35]} />
-                        <meshStandardMaterial color={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color} />
+                        <meshStandardMaterial color={color} />
                     </mesh>
-                ) : isMini ? (
+                ) : enemy.type === EnemyType.SPLITTER_MINI ? (
                     <mesh castShadow scale={isElite ? 1.4 : 1}>
                          <dodecahedronGeometry args={[0.2]} />
-                         <meshStandardMaterial color={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color} />
+                         <meshStandardMaterial color={color} />
                     </mesh>
+                ) : enemy.type === EnemyType.SHIELDED ? (
+                    <group scale={isElite ? 1.4 : 1}>
+                         <mesh castShadow><boxGeometry args={[0.5, 0.5, 0.5]} /><meshStandardMaterial color={color} /></mesh>
+                         {/* Shield Visual */}
+                         {enemy.shield !== undefined && enemy.shield > 0 && (
+                             <mesh>
+                                 <sphereGeometry args={[0.6, 16, 16]} />
+                                 <meshStandardMaterial color="#60a5fa" transparent opacity={0.3} wireframe />
+                             </mesh>
+                         )}
+                    </group>
+                ) : enemy.type === EnemyType.HEALER ? (
+                     <group scale={isElite ? 1.4 : 1}>
+                         <mesh castShadow><sphereGeometry args={[0.3, 16, 16]} /><meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.5} /></mesh>
+                         <Sparkles count={5} scale={1} size={2} color="#4ade80" />
+                     </group>
+                ) : enemy.type === EnemyType.PHASER ? (
+                     <group scale={isElite ? 1.4 : 1}>
+                         <mesh castShadow><octahedronGeometry args={[0.35]} /><meshStandardMaterial color={color} transparent opacity={0.8} /></mesh>
+                         {enemy.phaseCharging && (
+                             <mesh rotation={[0, Date.now() / 500, 0]}>
+                                 <ringGeometry args={[0.5, 0.55, 32]} />
+                                 <meshBasicMaterial color="#d8b4fe" />
+                             </mesh>
+                         )}
+                     </group>
+                ) : enemy.type === EnemyType.BOMBER ? (
+                     <group scale={isElite ? 1.4 : 1}>
+                         <mesh castShadow><icosahedronGeometry args={[0.35, 0]} /><meshStandardMaterial color={color} /></mesh>
+                         <mesh scale={Math.sin(Date.now() / 100) * 0.1 + 1}>
+                             <sphereGeometry args={[0.15]} />
+                             <meshBasicMaterial color="#fff" emissive="#f97316" emissiveIntensity={2} />
+                         </mesh>
+                     </group>
+                ) : enemy.type === EnemyType.ARMORED ? (
+                     <mesh castShadow scale={isElite ? 1.4 : 1}>
+                         <boxGeometry args={[0.5, 0.5, 0.5]} />
+                         <meshStandardMaterial color={color} metalness={0.8} roughness={0.2} />
+                     </mesh>
+                ) : enemy.type === EnemyType.SWARM ? (
+                     <mesh castShadow scale={isElite ? 1.4 : 1}>
+                         <tetrahedronGeometry args={[0.2]} />
+                         <meshStandardMaterial color={color} />
+                     </mesh>
                 ) : (
                     <Box args={[0.6, 0.6, 0.6]} castShadow scale={isElite ? 1.4 : 1}>
-                        <meshStandardMaterial color={enemy.freezeTimer && enemy.freezeTimer > 0 ? '#a5f3fc' : ENEMY_STATS[enemy.type].color} />
+                        <meshStandardMaterial color={color} />
                     </Box>
                 )}
             </Float>
@@ -268,6 +333,13 @@ const EnemyUnit: React.FC<{ enemy: Enemy }> = ({ enemy }) => {
                 <meshBasicMaterial color="#4ade80" />
             </mesh>
             
+            {enemy.shield !== undefined && enemy.shield > 0 && (
+                <mesh position={[0, 0.95, 0.01]}>
+                    <planeGeometry args={[0.8 * (enemy.shield / (enemy.maxShield || 60)), 0.05]} />
+                    <meshBasicMaterial color="#60a5fa" />
+                </mesh>
+            )}
+
             {isElite && (
                  <>
                     <Html position={[0, 1.4, 0]} center>
@@ -288,7 +360,8 @@ const EnemyUnit: React.FC<{ enemy: Enemy }> = ({ enemy }) => {
                 <Html position={[0, 1.2, 0]} center zIndexRange={[100, 0]}>
                     <div className="bg-slate-900/90 text-white p-1.5 rounded border border-slate-700 text-[10px] font-bold whitespace-nowrap">
                         <div className="text-slate-300">{isElite ? `ELITE ${enemy.type}` : enemy.type}</div>
-                        <div>{Math.ceil(enemy.health)} / {Math.ceil(enemy.maxHealth)}</div>
+                        <div>HP: {Math.ceil(enemy.health)} / {Math.ceil(enemy.maxHealth)}</div>
+                        {enemy.shield !== undefined && enemy.shield > 0 && <div>SHIELD: {Math.ceil(enemy.shield)}</div>}
                     </div>
                 </Html>
             )}
@@ -432,8 +505,12 @@ const EffectsRenderer: React.FC<{ effects: Effect[] }> = ({ effects }) => {
                 if (effect.type === 'ORBITAL_STRIKE') return <OrbitalStrikeEffect key={effect.id} position={effect.position} color={effect.color} progress={progress} />;
                 if (effect.type === 'DISABLE_FIELD') return <DisableFieldEffect key={effect.id} position={effect.position} color={effect.color} progress={progress} scale={effect.scale} />;
                 if (effect.type === 'CHAIN_ARC' && effect.targetPosition) return <ChainArc key={effect.id} start={effect.position} end={effect.targetPosition} color={effect.color} progress={progress} />;
+                if (effect.type === 'HEAL_BEAM' && effect.targetPosition) return <ChainArc key={effect.id} start={effect.position} end={effect.targetPosition} color={effect.color} progress={progress} type="HEAL_BEAM" />;
                 if (effect.type === 'VOID_SIGIL') return <VoidSigil key={effect.id} position={effect.position} color={effect.color} progress={progress} />;
                 if (effect.type === 'BLOCKED') return <Html key={effect.id} position={[effect.position.x, effect.position.y + progress * 2, effect.position.z]}><div className="text-blue-500 font-bold text-xs">{effect.text}</div></Html>;
+                if (effect.type === 'SHIELD_BREAK') return <NukeEffect key={effect.id} position={effect.position} color={effect.color} progress={progress} />;
+                if (effect.type === 'BOMBER_EXPLOSION') return <BomberExplosion key={effect.id} position={effect.position} color={effect.color} progress={progress} scale={effect.scale} />;
+                if (effect.type === 'PHASE_BLINK') return <Sparkles key={effect.id} count={10} scale={1} size={4} speed={2} opacity={1-progress} color={effect.color} position={[effect.position.x, 0.5, effect.position.z]} />;
 
                 const opacity = 1 - progress;
                 const scale = effect.scale * (2 - opacity); 
@@ -492,7 +569,6 @@ const Scene: React.FC<SceneProps> = ({ gameState, onPlaceTower, onSelectTower, s
       <SupplyDropsRenderer supplyDrops={gameState.supplyDrops} onCollect={onCollectSupplyDrop} />
 
       {gameState.enemies.map(enemy => (enemy.isBoss ? null : <EnemyUnit key={enemy.id} enemy={enemy} />))}
-      {/* Boss needs separate component in Scene or simplified */}
       {gameState.activeBoss && <EnemyUnit enemy={gameState.activeBoss} />}
 
       {gameState.towers.map(tower => <TowerUnit key={tower.id} tower={tower} enemies={gameState.enemies} isSelected={gameState.selectedTowerId === tower.id} onSelect={onSelectTower} />)}
