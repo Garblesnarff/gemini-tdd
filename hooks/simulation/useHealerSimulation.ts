@@ -2,40 +2,62 @@
 import { Enemy, EnemyType, Effect } from '../../types';
 import { SimulationContext } from './types';
 import { getDistance2D } from './simulationUtils';
+import { ENEMY_STATS } from '../../constants';
 
-export function simulateHealers(enemies: Enemy[], ctx: SimulationContext) {
-    const nextEnemies = [...enemies];
-    const healers = nextEnemies.filter(e => e.type === EnemyType.HEALER && e.health > 0);
+export function simulateHealers(enemies: Enemy[], ctx: SimulationContext): { enemies: Enemy[], newEffects: Effect[] } {
     const newEffects: Effect[] = [];
 
-    healers.forEach(healer => {
-        const range = healer.healRange || 3;
-        const rate = healer.healRate || 15;
-        const amount = rate * (ctx.tickDelta / 1000);
+    enemies.forEach(healer => {
+        if (healer.type !== EnemyType.HEALER || healer.health <= 0) return;
 
-        nextEnemies.forEach(target => {
-            if (target.id !== healer.id && !target.isBoss && target.health > 0 && target.health < target.maxHealth) {
+        healer.healCooldown = (healer.healCooldown || 0) - ctx.tickDelta;
+
+        if (healer.healCooldown <= 0) {
+            healer.healCooldown = (ENEMY_STATS[EnemyType.HEALER] as any).healInterval || 2000;
+
+            // Heal nearby non-boss, non-self enemies
+            let healedAny = false;
+            enemies.forEach(target => {
+                if (target.id === healer.id || target.isBoss || target.health <= 0) return;
+                if (target.health >= target.maxHealth) return;
+
                 const dist = getDistance2D(healer.position, target.position);
-                if (dist <= range) {
-                    target.health = Math.min(target.maxHealth, target.health + amount);
-                    
-                    // Visual throttle to prevent spamming effects
-                    if (Math.random() < 0.05 * ctx.gameSpeed) { 
-                         newEffects.push({
-                             id: Math.random().toString(),
-                             type: 'HEAL_BEAM',
-                             position: healer.position,
-                             targetPosition: target.position,
-                             color: '#22c55e',
-                             scale: 0.5,
-                             lifetime: 10,
-                             maxLifetime: 10
-                         });
+                const healRadius = (ENEMY_STATS[EnemyType.HEALER] as any).healRadius || 3.0;
+
+                if (dist <= healRadius) {
+                    const healAmt = (ENEMY_STATS[EnemyType.HEALER] as any).healAmount || 15;
+                    target.health = Math.min(target.maxHealth, target.health + healAmt);
+                    healedAny = true;
+
+                    // Green + effect on healed target
+                    if (Math.random() < 0.3) {
+                        newEffects.push({
+                            id: Math.random().toString(),
+                            type: 'HEAL',
+                            position: { ...target.position, y: 1.5 },
+                            color: '#4ade80',
+                            scale: 0.5,
+                            lifetime: 15,
+                            maxLifetime: 15
+                        });
                     }
                 }
+            });
+
+            if (healedAny) {
+                // Green ring effect on healer
+                newEffects.push({
+                    id: Math.random().toString(),
+                    type: 'HEAL_PULSE',
+                    position: healer.position,
+                    color: '#4ade80',
+                    scale: (ENEMY_STATS[EnemyType.HEALER] as any).healRadius || 3.0,
+                    lifetime: 20,
+                    maxLifetime: 20
+                });
             }
-        });
+        }
     });
 
-    return { enemies: nextEnemies, newEffects };
+    return { enemies, newEffects };
 }

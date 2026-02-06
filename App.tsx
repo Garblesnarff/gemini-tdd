@@ -151,7 +151,6 @@ const App: React.FC = () => {
                  nextMetaProgress.stats.totalPlayTime += (nextStats.endTime - nextStats.startTime);
                  nextStats.coresEarned = earnedCores;
 
-                 // STAGE_COMPLETE Achievement Check
                  const stageCompleteEvent: AchievementEvent = {
                     type: 'STAGE_COMPLETE',
                     stageId: prev.currentStage,
@@ -233,7 +232,8 @@ const App: React.FC = () => {
                             nextBossAnnouncement = bossConfig.phases[0].announcement;
                         } else {
                             const eStats = ENEMY_STATS[spawnEvent.type];
-                            nextEnemies.push({
+                            // Init specific enemy fields
+                            const newEnemy: Enemy = {
                                 id: `enemy_${Date.now()}_${Math.random()}`,
                                 type: spawnEvent.type,
                                 health: eStats.health * stageConfig.enemyScaling * hpMult,
@@ -244,8 +244,25 @@ const App: React.FC = () => {
                                 waypointIndex: 0,
                                 progress: 0,
                                 isElite: isElite,
-                                debuffs: []
-                            });
+                                debuffs: [],
+                                ...(spawnEvent.type === EnemyType.SHIELDED && {
+                                    shield: (eStats as any).shield * hpMult,
+                                    maxShield: (eStats as any).shield * hpMult,
+                                    shieldRegenTimer: 0,
+                                    shieldBroken: false
+                                }),
+                                ...(spawnEvent.type === EnemyType.HEALER && {
+                                    healCooldown: (eStats as any).healInterval || 2000
+                                }),
+                                ...(spawnEvent.type === EnemyType.PHASER && {
+                                    isPhased: false,
+                                    phaseTimer: (eStats as any).solidDuration || 3000
+                                }),
+                                ...(spawnEvent.type === EnemyType.ARMORED && {
+                                    armor: (eStats as any).armor || 10
+                                })
+                            };
+                            nextEnemies.push(newEnemy);
                         }
                     }
                 }
@@ -461,7 +478,6 @@ const App: React.FC = () => {
           if (!modTower.activeBuffs) modTower.activeBuffs = [];
           
           let buffType = type as string; 
-          // Map to buff keys used in logic
           if (type === ActiveAbilityType.IGNITION_BURST) buffType = 'IGNITION';
           
           modTower.activeBuffs.push({
@@ -470,12 +486,11 @@ const App: React.FC = () => {
               stacks: type === ActiveAbilityType.IGNITION_BURST ? 30 : undefined
           });
           
-          // Special immediate logic for Entropy Field (Zone)
           if (type === ActiveAbilityType.ENTROPY_FIELD) {
               newEffects.push({ id: Math.random().toString(), type: 'NOVA', position: tower.position, color: config.color, scale: config.range || 3, lifetime: 20, maxLifetime: 20 });
           }
           if (type === ActiveAbilityType.VOID_MARK) {
-              modTower.activeBuffs.push({ type: 'VOID_MARK_READY' }); // consumed on next shot
+              modTower.activeBuffs.push({ type: 'VOID_MARK_READY' });
           }
       }
 
@@ -484,10 +499,6 @@ const App: React.FC = () => {
 
   const handleBatchTrigger = useCallback((type: ActiveAbilityType) => {
       setGameState(prev => {
-          // Targeted?
-          const configSample = Object.values(ABILITY_MATRIX).find(t => t[TechPath.MAGMA]?.id === type || t[TechPath.PLASMA]?.id === type || t[TechPath.VOID]?.id === type);
-          // Just find the config from one of the towers.
-          // Better: Check if any tower with this ability requires targeting.
           const needsTarget = prev.towers.some(t => {
               const cfg = ABILITY_MATRIX[t.type][t.techPath];
               return cfg?.id === type && cfg.requiresTargeting;
@@ -557,7 +568,6 @@ const App: React.FC = () => {
       if (!type) return;
 
       setGameState(prev => {
-          // Find ready tower
           const readyTowerIndex = prev.towers.findIndex(t => {
               const cfg = ABILITY_MATRIX[t.type][t.techPath];
               return cfg?.id === type && t.abilityCooldown <= 0;
@@ -616,7 +626,6 @@ const App: React.FC = () => {
               towersBuilt: 0, 
               abilitiesUsed: 0, 
               enemiesKilled: 0,
-              // Reset run specific stats
               towersSold: 0,
               livesLostThisRun: 0,
               waveStreakNoLoss: 0,
@@ -708,7 +717,6 @@ const App: React.FC = () => {
         <OrbitControls minPolarAngle={Math.PI / 4} maxPolarAngle={Math.PI / 2.5} minDistance={10} maxDistance={40} />
       </Canvas>
       
-      {/* Toast Notifications */}
       <div className="fixed top-24 right-4 z-50 flex flex-col items-end pointer-events-none">
           {gameState.achievementToastQueue.map((item) => (
               <AchievementToast 
@@ -756,7 +764,6 @@ const App: React.FC = () => {
                 const config = UPGRADE_CONFIG.paths[path]?.[tower.level + 1];
                 if (!config) return prev;
                 
-                // Determine Correct Active Ability from Matrix
                 let activeType = tower.activeType;
                 if (tower.level + 1 === 3) {
                     const abilityConfig = ABILITY_MATRIX[tower.type][path];

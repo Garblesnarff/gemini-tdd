@@ -2,7 +2,7 @@
 import { Tower, Enemy, Projectile, TowerType, TargetPriority, DamageNumber, ActiveAbilityType, EnemyType } from '../../types';
 import { SimulationContext } from './types';
 import { sortByPriority, getDistance2D } from './simulationUtils';
-import { TOWER_STATS, ABILITY_MATRIX } from '../../constants';
+import { TOWER_STATS, ABILITY_MATRIX, ENEMY_STATS } from '../../constants';
 
 export function simulateTowerCombat(towers: Tower[], enemies: Enemy[], ctx: SimulationContext) {
   const newProjectiles: Projectile[] = [];
@@ -19,6 +19,7 @@ export function simulateTowerCombat(towers: Tower[], enemies: Enemy[], ctx: Simu
       
       // Find valid enemies in range
       const candidates = enemies.filter(e => {
+        if (e.type === EnemyType.PHASER && e.isPhased) return false;
         const hitbox = e.isBoss ? (e.bossConfig?.size || 1) * 0.5 : 0;
         const d = getDistance2D(e.position, tower.position);
         return d <= tower.range + hitbox;
@@ -91,7 +92,7 @@ export function simulateTowerCombat(towers: Tower[], enemies: Enemy[], ctx: Simu
 
         } else {
           // BASIC Tower (Hitscan)
-          const result = applyDamage(target, tower.damage, ctx);
+          const result = applyDamage(target, tower.damage, ctx, tower.type);
           if (result.damage > 0 || result.shieldHit) {
              newDamageNumbers.push({
                  id: Math.random().toString(),
@@ -116,18 +117,17 @@ function applyDamage(target: Enemy, rawDamage: number, ctx: SimulationContext, s
     let isArmorHit = false;
     let shieldHit = false;
 
-    // Check for Void Mark on Enemy
+    // Void Mark
     const mark = target.debuffs?.find(d => d.type === 'VOID_MARK');
     if (mark) {
         damage *= (mark.value || 1.5);
     }
 
     // Armor Reduction
-    if (target.type === EnemyType.ARMORED) {
-        if (sourceType !== TowerType.ARTILLERY) { // Artillery pierces armor
-             damage *= (1 - (target.armorReduction || 0.5));
-             isArmorHit = true;
-        }
+    if (target.type === EnemyType.ARMORED && sourceType !== TowerType.ARTILLERY) {
+        const armor = (ENEMY_STATS[EnemyType.ARMORED] as any).armor || 10;
+        damage = Math.max(1, damage - armor);
+        isArmorHit = true;
     }
 
     // Boss Resistances
@@ -138,17 +138,17 @@ function applyDamage(target: Enemy, rawDamage: number, ctx: SimulationContext, s
     }
 
     // Shield Logic
-    if (target.shield && target.shield > 0) {
+    if (target.shield !== undefined && target.shield > 0 && !target.shieldBroken) {
+        target.shieldTimer = 0; // Reset regen timer
         shieldHit = true;
         if (damage >= target.shield) {
             damage -= target.shield;
             target.shield = 0;
-            // Shield Break Effect? (Handled in visual layer by checking state or event)
+            target.shieldBroken = true;
         } else {
             target.shield -= damage;
             damage = 0;
         }
-        target.shieldRegenDelay = 0; // Reset regen delay
     }
 
     target.health -= damage;

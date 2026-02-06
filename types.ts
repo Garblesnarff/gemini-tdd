@@ -51,7 +51,7 @@ export interface Enemy {
   frozen?: number; 
   freezeTimer?: number; 
   isElite?: boolean; 
-  debuffs: EnemyDebuff[]; // New
+  debuffs: EnemyDebuff[]; 
   
   // Boss props
   isBoss?: boolean;
@@ -59,28 +59,29 @@ export interface Enemy {
   currentPhase?: number;
   abilityCooldowns?: Record<string, number>;
   isShielded?: boolean;
-  shieldTimer?: number;
+  shieldTimer?: number; // For Boss temporary shield or Generic Shielded regen delay tracker
   triggeredSpawnIndices?: number[];
   disabledZone?: { position: Vector3Tuple; radius: number; duration: number };
   activeBuffs?: { type: 'SPEED' | 'REGEN'; duration: number; value: number }[];
 
-  // New Enemy Props
+  // SHIELDED
   shield?: number;
   maxShield?: number;
-  shieldRegenDelay?: number;
+  shieldRegenTimer?: number; // ms since last hit. 3000ms delay required.
+  shieldBroken?: boolean;
 
-  isHealer?: boolean;
-  healRange?: number;
-  healRate?: number;
+  // HEALER
+  healCooldown?: number;
 
-  phaseCooldown?: number;
-  phaseCharging?: boolean;
-  phaseProgress?: number; // 0 to 1
+  // PHASER
+  isPhased?: boolean;
+  phaseTimer?: number;
   
-  isBomber?: boolean;
-  explosionRadius?: number;
+  // ARMORED
+  armor?: number;
 
-  armorReduction?: number;
+  // BOMBER
+  explosionRadius?: number;
 }
 
 export enum TowerType {
@@ -201,7 +202,7 @@ export interface Projectile {
 
 export interface Effect {
   id: string;
-  type: 'EXPLOSION' | 'SPARK' | 'TEXT' | 'NOVA' | 'FREEZE_WAVE' | 'ORBITAL_STRIKE' | 'PORTAL' | 'BLOCKED' | 'DISABLE_FIELD' | 'CHAIN_ARC' | 'VOID_SIGIL' | 'SHIELD_BREAK' | 'HEAL_BEAM' | 'PHASE_BLINK' | 'BOMBER_EXPLOSION' | 'ARMOR_SPARK';
+  type: 'EXPLOSION' | 'SPARK' | 'TEXT' | 'NOVA' | 'FREEZE_WAVE' | 'ORBITAL_STRIKE' | 'PORTAL' | 'BLOCKED' | 'DISABLE_FIELD' | 'CHAIN_ARC' | 'VOID_SIGIL' | 'SHIELD_BREAK' | 'HEAL_BEAM' | 'PHASE_BLINK' | 'BOMBER_EXPLOSION' | 'ARMOR_SPARK' | 'HEAL' | 'HEAL_PULSE';
   position: Vector3Tuple;
   targetPosition?: Vector3Tuple; // For Chain Arc
   color: string;

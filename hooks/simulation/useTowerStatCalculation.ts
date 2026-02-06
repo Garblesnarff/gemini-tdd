@@ -50,8 +50,10 @@ export function calculateTowerStats(towers: Tower[], augments: Augment[], ctx: S
     if (nextTower.disabledTimer && nextTower.disabledTimer > 0) return nextTower;
     
     // --- META UPGRADE APPLICATION (Base Stats) ---
-    nextTower.damage *= ctx.metaEffects.globalDamageMultiplier;
-    nextTower.range *= ctx.metaEffects.globalRangeMultiplier;
+    if (ctx.metaEffects) {
+        nextTower.damage *= ctx.metaEffects.globalDamageMultiplier;
+        nextTower.range *= ctx.metaEffects.globalRangeMultiplier;
+    }
 
     // Apply Passive Auras from nearby towers
     towers.forEach(other => {
@@ -91,26 +93,28 @@ export function calculateTowerStats(towers: Tower[], augments: Augment[], ctx: S
     }
 
     // Apply Global Augments
-    augments.forEach(aug => {
-      if (!aug || !aug.effect) return;
-      const e = aug.effect;
-      
-      const isTargeted = e.target === 'ALL' || e.target === tower.type;
-      const isTechMatch = !e.techTarget || e.techTarget === tower.techPath;
+    if (augments) {
+        augments.forEach(aug => {
+          if (!aug || !aug.effect) return;
+          const e = aug.effect;
+          
+          const isTargeted = e.target === 'ALL' || e.target === tower.type;
+          const isTechMatch = !e.techTarget || e.techTarget === tower.techPath;
 
-      if (isTargeted && isTechMatch && e.stat) {
-        const val = e.value || 0;
-        if (e.stat === 'damage') nextTower.damage *= (1 + val);
-        if (e.stat === 'range') nextTower.range *= (1 + val);
-        if (e.stat === 'fireRate') nextTower.fireRate *= (1 + val);
-      }
-      
-      // Special Augment: Bombardment Protocol
-      if (aug.id === 'bombardment_protocol' && tower.type === TowerType.ARTILLERY) {
-          nextTower.damage *= 1.3;
-          nextTower.fireRate *= 0.8;
-      }
-    });
+          if (isTargeted && isTechMatch && e.stat) {
+            const val = e.value !== undefined ? e.value : 0;
+            if (e.stat === 'damage') nextTower.damage *= (1 + val);
+            if (e.stat === 'range') nextTower.range *= (1 + val);
+            if (e.stat === 'fireRate') nextTower.fireRate *= (1 + val);
+          }
+          
+          // Special Augment: Bombardment Protocol
+          if (aug.id === 'bombardment_protocol' && tower.type === TowerType.ARTILLERY) {
+              nextTower.damage *= 1.3;
+              nextTower.fireRate *= 0.8;
+          }
+        });
+    }
 
     return nextTower;
   });

@@ -10,7 +10,7 @@ import { simulateProjectiles } from './useProjectileSimulation';
 import { processEnemyDeaths } from './useEnemyDeath';
 import { simulateBoss } from './useBossSimulation';
 import { manageWaveState } from './useWaveManager';
-import { simulateHealers } from './useHealerSimulation'; // New Hook
+import { simulateHealers } from './useHealerSimulation';
 import { evaluateDirectorState } from './directorSystem';
 import { checkAchievements } from '../../achievements';
 import { DIRECTOR_CONFIG, GRID_SIZE } from '../../constants';
@@ -24,7 +24,6 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
   const lastTimeRef = useRef(Date.now());
 
   useEffect(() => {
-    // Track pause time separately to handle "secret_afk"
     const now = Date.now();
     if (gameState.gamePhase === 'PLAYING' && gameState.gameSpeed === 0) {
         pauseTimerRef.current += (now - lastTimeRef.current);
@@ -41,7 +40,6 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
     const interval = setInterval(() => {
       setGameState(prev => {
         if (prev.gameSpeed === 0) {
-            // Only update stats for pause duration while paused
             return { 
                 ...prev, 
                 stats: { ...prev.stats, pauseDuration: prev.stats.pauseDuration + TICK_RATE } 
@@ -51,10 +49,8 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
         const ctx = buildSimulationContext(prev, TICK_RATE);
         const gameDelta = ctx.tickDelta;
         
-        // Drain pending events from App (placement, upgrades, etc)
         const achievementEvents: AchievementEvent[] = [...prev.pendingAchievementEvents];
 
-        // Clone state for mutation
         let enemies = [...prev.enemies];
         let towers = [...prev.towers];
         let projectiles = [...prev.projectiles];
@@ -72,20 +68,17 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
         let directorUpdates: Partial<GameState> = {};
         let currentBossDeathTimer = prev.bossDeathTimer;
 
-        // BOSS_DEATH logic
         if (gamePhase === 'BOSS_DEATH') {
             currentBossDeathTimer -= gameDelta;
             const deadBoss = enemies.find(e => e.isBoss);
             activeBoss = deadBoss || null;
         }
 
-        // Supply Drop Expiration
         supplyDrops = supplyDrops.filter(sd => {
             sd.lifetime -= gameDelta;
             return sd.lifetime > 0;
         });
 
-        // Periodic Supply Drop Spawning
         if ((prev.waveStatus === 'SPAWNING' || prev.waveStatus === 'CLEARING') && prev.directorState === 'RELIEF') {
             supplyDropTimerRef.current += gameDelta;
             if (supplyDropTimerRef.current >= 9000) {
@@ -110,26 +103,26 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
         // 1. Tower Stats
         towers = calculateTowerStats(towers, prev.activeAugments, ctx);
 
-        // 2. Healers (New)
-        const healerRes = simulateHealers(enemies, ctx);
-        enemies = healerRes.enemies;
-        effects.push(...healerRes.newEffects);
-
-        // 3. Hazards
-        const hazRes = simulateHazards(hazards, enemies, ctx);
-        hazards = hazRes.hazards;
-        enemies = hazRes.enemies;
-
-        // 4. Movement
+        // 2. Movement
         const moveRes = simulateEnemyMovement(enemies, towers, ctx);
         enemies = moveRes.enemies;
         effects.push(...moveRes.newEffects);
         if (moveRes.livesLost > 0) {
             lives -= moveRes.livesLost;
             stats.livesLostThisRun += moveRes.livesLost;
-            waveStats.livesLostThisWave += moveRes.livesLost; // Consolidate to waveStats
+            waveStats.livesLostThisWave += moveRes.livesLost;
             stats.waveStreakNoLoss = 0;
         }
+
+        // 3. Healer Simulation (New Step)
+        const healerRes = simulateHealers(enemies, ctx);
+        enemies = healerRes.enemies;
+        effects.push(...healerRes.newEffects);
+
+        // 4. Hazards
+        const hazRes = simulateHazards(hazards, enemies, ctx);
+        hazards = hazRes.hazards;
+        enemies = hazRes.enemies;
 
         // 5. Combat
         const combatRes = simulateTowerCombat(towers, enemies, ctx);
@@ -158,7 +151,7 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
                     enemyType: e.enemyType as any, 
                     damage: 0, 
                     overkill: 0, 
-                    source: 'TOWER' // Simplified source tracking
+                    source: 'TOWER'
                 });
             }
             if (e.type === 'BOSS_DEFEATED') {
@@ -210,7 +203,6 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
         
         const newToasts = unlocked.map(ach => ({ achievement: ach, timestamp: Date.now() }));
 
-        // Update Boss Ref
         const updatedBoss = enemies.find(e => e.isBoss) || null;
 
         return {
@@ -222,7 +214,7 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
           ...directorUpdates,
           metaProgress: updatedMeta,
           achievementToastQueue: [...prev.achievementToastQueue, ...newToasts],
-          pendingAchievementEvents: [] // Clear consumed events
+          pendingAchievementEvents: []
         };
       });
     }, TICK_RATE);

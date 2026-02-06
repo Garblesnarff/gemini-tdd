@@ -2,7 +2,7 @@
 import { Projectile, Enemy, Effect, DamageNumber, TowerType, EnemyType } from '../../types';
 import { SimulationContext, GameEvent } from './types';
 import { getDistance2D } from './simulationUtils';
-import { ABILITY_MATRIX } from '../../constants';
+import { ABILITY_MATRIX, ENEMY_STATS } from '../../constants';
 
 export function simulateProjectiles(projectiles: Projectile[], enemies: Enemy[], ctx: SimulationContext) {
   const nextProjectiles: Projectile[] = [];
@@ -19,7 +19,6 @@ export function simulateProjectiles(projectiles: Projectile[], enemies: Enemy[],
       if (p.sourceType === TowerType.ARTILLERY) {
         processArtilleryHit(p.position, p, enemies, newEffects, newDamageNumbers, ctx);
       } else if (p.isPerforating) {
-         // Perforating shots continue without a target to guide them
          moveProjectile(p, null, nextProjectiles, enemies, newEffects, newDamageNumbers, events, ctx);
       }
       continue;
@@ -35,17 +34,13 @@ export function simulateProjectiles(projectiles: Projectile[], enemies: Enemy[],
       if (p.sourceType === TowerType.ARTILLERY) {
         processArtilleryHit(target.position, p, enemies, newEffects, newDamageNumbers, ctx);
       } else {
-        // Direct Hit Logic
         processDirectHit(target, p, enemies, newEffects, newDamageNumbers, events, ctx);
       }
 
-      // Projectile Continuation Logic
       if (p.isPerforating) {
-         p.perforationHitList?.push(target.id); // Add to ignore list for this frame/pass
-         // Continue moving through
+         p.perforationHitList?.push(target.id);
          moveProjectile(p, target, nextProjectiles, enemies, newEffects, newDamageNumbers, events, ctx);
       } 
-      // Non-perforating projectiles are consumed on hit
     } else {
       moveProjectile(p, target, nextProjectiles, enemies, newEffects, newDamageNumbers, events, ctx);
     }
@@ -70,7 +65,6 @@ function moveProjectile(
         const dist = Math.sqrt(dx * dx + dz * dz);
         const speed = p.speed * 1.5;
         
-        // Perforation hit check while moving
         if (p.isPerforating) {
             allEnemies.forEach(e => {
                 if (!p.perforationHitList?.includes(e.id) && getDistance2D(p.position, e.position) < 0.5) {
@@ -96,6 +90,9 @@ function processDirectHit(
     events: GameEvent[],
     ctx: SimulationContext
 ) {
+    // --- Phaser Immunity ---
+    if (target.type === EnemyType.PHASER && target.isPhased) return;
+
     let damage = p.damage;
     let color = p.color;
     let isBlocked = false;
@@ -109,7 +106,7 @@ function processDirectHit(
         color = '#fbbf24'; 
     }
 
-    // Void Mark Debuff Application (No damage, just mark)
+    // Void Mark
     if (p.isVoidMark) {
         if (!target.debuffs) target.debuffs = [];
         target.debuffs.push({
@@ -122,7 +119,7 @@ function processDirectHit(
         damage = 0; 
     }
 
-    // Ignition Burn Application
+    // Ignition
     if (p.isIgnition) {
         if (!target.debuffs) target.debuffs = [];
         target.debuffs.push({
@@ -134,7 +131,7 @@ function processDirectHit(
         newEffects.push({ id: Math.random().toString(), type: 'SPARK', position: target.position, color: '#f97316', scale: 0.5, lifetime: 20, maxLifetime: 20 });
     }
 
-    // Chain Lightning Logic
+    // Chain Lightning
     if (p.isChainLightning) {
         const neighbors = enemies
             .filter(e => e.id !== target.id && getDistance2D(e.position, target.position) <= 3)
@@ -158,18 +155,20 @@ function processDirectHit(
         });
     }
 
-    // Apply Damage Modifiers
+    // --- Damage Modifiers ---
     const mark = target.debuffs?.find(d => d.type === 'VOID_MARK');
     if (mark && !p.isVoidMark) {
         damage *= (mark.value || 1.5);
     }
 
-    // ARMORED LOGIC
+    // --- Armored Reduction ---
     if (target.type === EnemyType.ARMORED && p.sourceType !== TowerType.ARTILLERY && !p.isIgnition) {
-        damage *= (1 - (target.armorReduction || 0.5));
+        const armor = (ENEMY_STATS[EnemyType.ARMORED] as any).armor || 10;
+        damage = Math.max(1, damage - armor);
         isArmorHit = true;
     }
 
+    // --- Boss Resistances ---
     if (target.isBoss) {
         if (target.isShielded) {
             damage = 0;
@@ -180,18 +179,19 @@ function processDirectHit(
         }
     }
 
-    // SHIELD LOGIC
-    if (target.shield && target.shield > 0 && !isBlocked) {
+    // --- Shield Logic (Shielded Enemy Type) ---
+    if (target.shield !== undefined && target.shield > 0 && !target.shieldBroken) {
+        target.shieldTimer = 0; // Reset regen timer
         shieldHit = true;
         if (damage >= target.shield) {
             damage -= target.shield;
             target.shield = 0;
-            newEffects.push({ id: Math.random().toString(), type: 'SHIELD_BREAK', position: target.position, color: '#60a5fa', scale: 1.5, lifetime: 20, maxLifetime: 20 });
+            target.shieldBroken = true;
+            newEffects.push({ id: Math.random().toString(), type: 'SHIELD_BREAK', position: target.position, color: '#60a5fa', scale: 1.5, lifetime: 25, maxLifetime: 25 });
         } else {
             target.shield -= damage;
             damage = 0;
         }
-        target.shieldRegenDelay = 0;
     }
 
     if (isBlocked) {
@@ -201,7 +201,7 @@ function processDirectHit(
         
         if (isArmorHit) {
              newEffects.push({ id: Math.random().toString(), type: 'ARMOR_SPARK', position: target.position, color: '#94a3b8', scale: 0.8, lifetime: 15, maxLifetime: 15 });
-             color = '#94a3b8'; // Grey damage for armor
+             color = '#94a3b8'; 
         }
 
         newDamageNumbers.push({ 
@@ -241,6 +241,9 @@ function processArtilleryHit(pos: {x:number, y:number, z:number}, p: Projectile,
   const color = isCrit ? '#fbbf24' : '#f59e0b';
 
   enemies.forEach(e => {
+    // Phase immunity
+    if (e.type === EnemyType.PHASER && e.isPhased) return;
+
     const d = getDistance2D(e.position, pos);
     const hitbox = e.isBoss ? (e.bossConfig?.size || 1) * 0.5 : 0;
     if (d <= radius + hitbox) {
@@ -250,8 +253,8 @@ function processArtilleryHit(pos: {x:number, y:number, z:number}, p: Projectile,
       if (mark) dmg *= (mark.value || 1.5);
 
       // Artillery Ignores Armor
-      // No reduction for EnemyType.ARMORED
-
+      
+      // Boss
       if (e.isBoss && e.bossConfig) {
         if (e.isShielded) dmg = 0;
         else {
@@ -260,19 +263,20 @@ function processArtilleryHit(pos: {x:number, y:number, z:number}, p: Projectile,
         }
       }
 
-      // Shield Check
+      // Shielded
       let shieldHit = false;
-      if (e.shield && e.shield > 0) {
+      if (e.shield !== undefined && e.shield > 0 && !e.shieldBroken) {
+          e.shieldTimer = 0;
           shieldHit = true;
           if (dmg >= e.shield) {
               dmg -= e.shield;
               e.shield = 0;
-              nextEffects.push({ id: Math.random().toString(), type: 'SHIELD_BREAK', position: e.position, color: '#60a5fa', scale: 1.5, lifetime: 20, maxLifetime: 20 });
+              e.shieldBroken = true;
+              nextEffects.push({ id: Math.random().toString(), type: 'SHIELD_BREAK', position: e.position, color: '#60a5fa', scale: 1.5, lifetime: 25, maxLifetime: 25 });
           } else {
               e.shield -= dmg;
               dmg = 0;
           }
-          e.shieldRegenDelay = 0;
       }
 
       if (dmg > 0 || shieldHit) {

@@ -14,14 +14,12 @@ export function processEnemyDeaths(enemies: Enemy[], towers: Tower[], gold: numb
   enemies.forEach(e => {
     if (e.health <= 0) {
       if (e.isBoss) {
-        // Only trigger defeat if not already in death phase
         if (ctx.state.gamePhase !== 'BOSS_DEATH') {
             bossDefeated = true;
             events.push({ type: 'BOSS_DEFEATED', bossId: e.id });
         }
-        nextEnemies.push(e); // Keep boss for death sequence phase
+        nextEnemies.push(e); 
       } else {
-        // Rewards with Meta Bonus
         const baseReward = ENEMY_STATS[e.type].goldReward;
         const reward = Math.floor(baseReward * ctx.directorGoldBonus * ctx.metaEffects.killGoldMultiplier);
         
@@ -38,7 +36,6 @@ export function processEnemyDeaths(enemies: Enemy[], towers: Tower[], gold: numb
             const miniStats = ENEMY_STATS[miniType];
             let miniHealth = miniStats.health;
             
-            // Chain Reaction Augment
             const chainAug = ctx.activeAugments.find(a => a.id === 'chain_reaction');
             if (chainAug && chainAug.effect) miniHealth *= (1 - (chainAug.effect.value || 0.5));
 
@@ -64,26 +61,16 @@ export function processEnemyDeaths(enemies: Enemy[], towers: Tower[], gold: numb
 
         // BOMBER LOGIC
         if (e.type === EnemyType.BOMBER) {
-            const blastRadius = ENEMY_STATS[EnemyType.BOMBER].explosionRadius || 2.5;
-            newEffects.push({ id: Math.random().toString(), type: 'BOMBER_EXPLOSION', position: e.position, color: '#f97316', scale: blastRadius, lifetime: 30, maxLifetime: 30 });
+            const blastRadius = (ENEMY_STATS[EnemyType.BOMBER] as any).explosionRadius || 2.5;
+            const disableDuration = (ENEMY_STATS[EnemyType.BOMBER] as any).disableDuration || 3000;
+            
+            newEffects.push({ id: Math.random().toString(), type: 'BOMBER_EXPLOSION', position: e.position, color: '#f43f5e', scale: blastRadius, lifetime: 30, maxLifetime: 30 });
             
             // Disable Towers
             towers.forEach(t => {
                 if (getDistance2D(e.position, t.position) <= blastRadius) {
-                    t.disabledTimer = ENEMY_STATS[EnemyType.BOMBER].explosionDisableDuration || 4000;
+                    t.disabledTimer = Math.max(t.disabledTimer || 0, disableDuration);
                     newEffects.push({ id: Math.random().toString(), type: 'DISABLE_FIELD', position: t.position, color: '#ef4444', scale: 1, lifetime: 40, maxLifetime: 40 });
-                }
-            });
-
-            // Damage other enemies
-            const dmg = ENEMY_STATS[EnemyType.BOMBER].explosionDamageToEnemies || 30;
-            // Iterate remaining enemies in this list AND nextEnemies so far? 
-            // Better to apply in next frame or just apply to current list instance reference?
-            // Since we are iterating `enemies`, modifying objects in `enemies` array is tricky if we don't process them later.
-            // Let's modify `enemies` directly for simplicity as they are objects.
-            enemies.forEach(other => {
-                if (other.id !== e.id && other.health > 0 && getDistance2D(e.position, other.position) <= blastRadius) {
-                    other.health -= dmg;
                 }
             });
         } else {
