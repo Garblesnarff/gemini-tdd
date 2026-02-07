@@ -1,5 +1,5 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { GameState, TowerType, TechPath, ActiveAbilityType, TargetPriority, Vector3Tuple, Augment, StageId, BossAbilityType, Tower } from '../types';
 import { TOWER_STATS, TECH_PATH_INFO, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_MATRIX, STAGE_CONFIGS } from '../constants';
 import { Heart, Coins, Swords, Shield, Zap, Info, ChevronRight, ChevronLeft, RefreshCcw, Radio, Eye, X, ArrowUpCircle, Check, Play, Pause, FastForward, Trash2, Crosshair, Target, Cpu, Flame, Snowflake, Ghost, Bomb, Lock, Star, Map, Skull, Timer, Medal, AlertCircle, Package, Database } from 'lucide-react';
@@ -36,38 +36,43 @@ const AbilityHotbar: React.FC<{
     gameState: GameState, 
     onBatchTrigger: (type: ActiveAbilityType) => void 
 }> = ({ gameState, onBatchTrigger }) => {
+    const [openMenu, setOpenMenu] = useState<string | null>(null);
     
     // Group abilities based on function/path concept
     const abilityGroups = useMemo(() => {
         const groups = [
             { 
-                // Direct Damage (Magma)
+                id: 'PWR-A',
                 types: [ActiveAbilityType.ERUPTION, ActiveAbilityType.ORBITAL_STRIKE, ActiveAbilityType.IGNITION_BURST, ActiveAbilityType.NAPALM],
                 label: 'PWR-A', key: '1', color: 'red', icon: Flame 
             },
             {
-                // Buffs / Fire Rate (Plasma)
+                id: 'PWR-B',
                 types: [ActiveAbilityType.OVERCLOCK, ActiveAbilityType.PERFORATION, ActiveAbilityType.CHAIN_LIGHTNING, ActiveAbilityType.BARRAGE],
                 label: 'PWR-B', key: '2', color: 'cyan', icon: Zap
             },
             {
-                // Control (Void)
+                id: 'PWR-C',
                 types: [ActiveAbilityType.TEMPORAL_ANCHOR, ActiveAbilityType.VOID_MARK, ActiveAbilityType.ENTROPY_FIELD, ActiveAbilityType.SINGULARITY],
                 label: 'PWR-C', key: '3', color: 'purple', icon: Snowflake
             }
         ];
         
         return groups.map(group => {
-            let count = 0;
-            let ready = 0;
+            const readyInstants: ActiveAbilityType[] = [];
+            const readyTargeted: ActiveAbilityType[] = [];
             let currentCd = 0;
             let maxCd = 0;
             
             gameState.towers.forEach(t => {
                 if (group.types.includes(t.activeType)) {
-                    count++;
                     if (t.abilityCooldown <= 0) {
-                        ready++;
+                        const cfg = ABILITY_MATRIX[t.type][t.techPath];
+                        if (cfg?.requiresTargeting) {
+                            if (!readyTargeted.includes(t.activeType)) readyTargeted.push(t.activeType);
+                        } else {
+                            if (!readyInstants.includes(t.activeType)) readyInstants.push(t.activeType);
+                        }
                     } else {
                         if (currentCd === 0 || t.abilityCooldown > currentCd) {
                              currentCd = t.abilityCooldown;
@@ -77,57 +82,93 @@ const AbilityHotbar: React.FC<{
                 }
             });
             
-            return { ...group, count, ready, currentCd, maxCd };
+            return { 
+                ...group, 
+                readyCount: readyInstants.length + readyTargeted.length, 
+                readyInstants, 
+                readyTargeted, 
+                currentCd, 
+                maxCd 
+            };
         });
     }, [gameState.towers]);
 
     return (
         <div className="absolute left-6 top-1/2 -translate-y-1/2 flex flex-col gap-3 pointer-events-auto">
             {abilityGroups.map((group) => {
-                const hasTech = group.count > 0;
+                const hasAnyReady = group.readyCount > 0;
                 const progress = group.currentCd > 0 ? (group.currentCd / group.maxCd) * 100 : 0;
                 
-                // Trigger action: Activate ALL types in this group
-                const handleClick = () => {
-                    if (!hasTech) return;
-                    group.types.forEach(type => onBatchTrigger(type));
+                const handlePrimaryClick = () => {
+                    if (!hasAnyReady) return;
+                    
+                    // Fire all instants immediately
+                    group.readyInstants.forEach(type => onBatchTrigger(type));
+
+                    // Handle targeted
+                    if (group.readyTargeted.length === 1) {
+                        onBatchTrigger(group.readyTargeted[0]);
+                    } else if (group.readyTargeted.length > 1) {
+                        setOpenMenu(openMenu === group.id ? null : group.id);
+                    }
                 };
 
                 return (
-                    <button
-                        key={group.key}
-                        onClick={handleClick}
-                        disabled={!hasTech || (group.ready === 0 && group.currentCd > 0)}
-                        className={`
-                            group relative w-16 h-16 rounded-xl border-2 flex flex-col items-center justify-center transition-all duration-200 overflow-hidden
-                            ${!hasTech ? 'opacity-20 bg-slate-900 border-slate-800 grayscale cursor-not-allowed' : 
-                              group.ready > 0 
-                                    ? `bg-slate-900/80 border-${group.color}-500/50 hover:border-${group.color}-400 shadow-[0_0_15px_rgba(59,130,246,0.2)] active:scale-95` 
-                                    : 'bg-slate-950/90 border-slate-800 cursor-not-allowed grayscale'}
-                        `}
-                    >
-                        {group.currentCd > 0 && group.ready === 0 && (
-                            <div 
-                                className="absolute bottom-0 left-0 right-0 bg-slate-800/80 origin-bottom z-0"
-                                style={{ height: `${progress}%` }}
-                            />
-                        )}
+                    <div key={group.id} className="relative flex items-center">
+                        <button
+                            onClick={handlePrimaryClick}
+                            onContextMenu={(e) => { e.preventDefault(); if (group.readyTargeted.length > 1) setOpenMenu(group.id); }}
+                            disabled={!hasAnyReady && group.currentCd === 0}
+                            className={`
+                                group relative w-16 h-16 rounded-xl border-2 flex flex-col items-center justify-center transition-all duration-200 overflow-hidden
+                                ${!hasAnyReady && group.currentCd === 0 ? 'opacity-20 bg-slate-900 border-slate-800 grayscale cursor-not-allowed' : 
+                                  hasAnyReady 
+                                        ? `bg-slate-900/80 border-${group.color}-500/50 hover:border-${group.color}-400 shadow-[0_0_15px_rgba(59,130,246,0.2)] active:scale-95` 
+                                        : 'bg-slate-950/90 border-slate-800 cursor-not-allowed grayscale'}
+                            `}
+                        >
+                            {group.currentCd > 0 && !hasAnyReady && (
+                                <div 
+                                    className="absolute bottom-0 left-0 right-0 bg-slate-800/80 origin-bottom z-0"
+                                    style={{ height: `${progress}%` }}
+                                />
+                            )}
 
-                        <div className="relative z-10 flex flex-col items-center">
-                            <group.icon size={24} className={group.ready > 0 ? `text-${group.color}-400` : 'text-slate-500'} />
-                            <span className="text-[9px] font-black uppercase tracking-tighter mt-1 opacity-70">
-                                {group.label}
-                            </span>
-                        </div>
+                            <div className="relative z-10 flex flex-col items-center">
+                                <group.icon size={24} className={hasAnyReady ? `text-${group.color}-400` : 'text-slate-500'} />
+                                <span className="text-[9px] font-black uppercase tracking-tighter mt-1 opacity-70">
+                                    {group.label}
+                                </span>
+                            </div>
 
-                        {hasTech && (
-                            <div className={`absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black border border-slate-800 shadow-lg z-20
-                                ${group.ready > 0 ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400'}
-                            `}>
-                                {group.ready}
+                            {hasAnyReady && (
+                                <div className={`absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black border border-slate-800 shadow-lg z-20
+                                    ${hasAnyReady ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400'}
+                                `}>
+                                    {group.readyCount}
+                                </div>
+                            )}
+                        </button>
+
+                        {/* Targeted Selection Sub-menu */}
+                        {openMenu === group.id && (
+                            <div className="absolute left-20 flex gap-2 animate-in slide-in-from-left-2 fade-in duration-200">
+                                {group.readyTargeted.map(type => {
+                                    return (
+                                        <button
+                                            key={type}
+                                            onClick={() => { onBatchTrigger(type); setOpenMenu(null); }}
+                                            className="w-12 h-12 rounded-lg bg-slate-900 border border-purple-500/50 hover:bg-purple-900/40 text-purple-400 flex items-center justify-center transition-all hover:scale-110 active:scale-90 shadow-xl"
+                                            title={`Targeted: ${type}`}
+                                        >
+                                            <Crosshair size={18} />
+                                        </button>
+                                    );
+                                })}
+                                <button onClick={() => setOpenMenu(null)} className="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center self-center"><X size={14}/></button>
                             </div>
                         )}
-                    </button>
+                    </div>
                 );
             })}
         </div>
@@ -340,164 +381,9 @@ const HUD: React.FC<HUDProps> = ({
           </div>
       )}
 
-      {/* --- STAGE COMPLETE OVERLAY --- */}
-      {gameState.gamePhase === 'STAGE_COMPLETE' && (
-          <div className="absolute inset-0 bg-slate-900/95 flex flex-col items-center justify-center z-50 pointer-events-auto animate-in fade-in zoom-in duration-500">
-              <div className="flex flex-col items-center gap-6 max-w-md w-full">
-                  <div className="flex flex-col items-center">
-                      <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-emerald-400 uppercase tracking-tighter drop-shadow-2xl">Mission Complete</h1>
-                      <div className="text-emerald-500 font-mono tracking-[0.5em] text-sm font-bold mt-2">SECTOR SECURED</div>
-                  </div>
-
-                  {/* Stars */}
-                  <div className="flex gap-4 mb-4">
-                      {Array.from({length: 3}).map((_, i) => {
-                          const currentStageProgress = gameState.stageProgress[gameState.currentStage];
-                          const starCount = currentStageProgress?.stars || 0;
-                          
-                          return (
-                              <Star 
-                                  key={i} 
-                                  size={48} 
-                                  fill={i < starCount ? "#facc15" : "none"} 
-                                  className={i < starCount ? "text-yellow-400 drop-shadow-[0_0_15px_rgba(250,204,21,0.6)]" : "text-slate-800"} 
-                                  strokeWidth={1.5}
-                              />
-                          );
-                      })}
-                  </div>
-
-                  {/* Rewards */}
-                  <div className="bg-slate-800/50 border border-slate-700 p-6 rounded-2xl w-full flex flex-col gap-4">
-                      <div className="flex justify-between items-center border-b border-slate-700 pb-4">
-                          <span className="text-slate-400 uppercase font-bold text-xs tracking-wider">Data Cores Earned</span>
-                          <div className="flex items-center gap-2 text-emerald-400 font-black text-xl">
-                              <Database size={20} />
-                              +{gameState.stats.coresEarned || 0}
-                          </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-4">
-                          <div className="flex flex-col">
-                              <span className="text-[10px] text-slate-500 uppercase font-bold">Enemies Neutralized</span>
-                              <span className="text-white font-mono text-lg">{gameState.stats.enemiesKilled}</span>
-                          </div>
-                          <div className="flex flex-col">
-                              <span className="text-[10px] text-slate-500 uppercase font-bold">Total Credits</span>
-                              <span className="text-yellow-400 font-mono text-lg">{gameState.stats.totalGoldEarned}</span>
-                          </div>
-                          <div className="flex flex-col">
-                              <span className="text-[10px] text-slate-500 uppercase font-bold">Lives Remaining</span>
-                              <span className="text-red-400 font-mono text-lg">{Math.floor(gameState.lives)}</span>
-                          </div>
-                          <div className="flex flex-col">
-                              <span className="text-[10px] text-slate-500 uppercase font-bold">Time Elapsed</span>
-                              <span className="text-blue-400 font-mono text-lg">{((gameState.stats.endTime - gameState.stats.startTime) / 1000 / 60).toFixed(1)}m</span>
-                          </div>
-                      </div>
-                  </div>
-
-                  <button onClick={onGoToStageSelect} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 px-8 rounded-xl shadow-lg shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2 w-full">
-                      <ChevronLeft size={20} /> RETURN TO COMMAND
-                  </button>
-              </div>
-          </div>
-      )}
-
-      {/* --- GAME OVER OVERLAY --- */}
-      {gameState.gamePhase === 'GAME_OVER' && (
-          <div className="absolute inset-0 bg-red-950/90 flex flex-col items-center justify-center z-50 pointer-events-auto animate-in fade-in zoom-in duration-500">
-              <div className="flex flex-col items-center gap-8 max-w-md w-full text-center">
-                  <div className="flex flex-col items-center">
-                      <AlertCircle size={64} className="text-red-500 mb-4 animate-pulse" />
-                      <h1 className="text-5xl font-black text-white uppercase tracking-tighter drop-shadow-2xl">Mission Failed</h1>
-                      <div className="text-red-400 font-mono tracking-[0.5em] text-sm font-bold mt-2">CORE DESTROYED</div>
-                  </div>
-
-                  <div className="bg-red-900/20 border border-red-500/30 p-6 rounded-2xl w-full">
-                      <div className="flex flex-col items-center gap-2">
-                          <span className="text-slate-400 uppercase font-bold text-xs tracking-wider">Wave Reached</span>
-                          <span className="text-white font-black text-4xl">{gameState.wave} <span className="text-lg text-slate-500">/ {totalWaves}</span></span>
-                      </div>
-                  </div>
-
-                  <div className="flex flex-col gap-3 w-full">
-                      <button onClick={onReset} className="bg-white text-red-900 hover:bg-slate-200 font-bold py-4 rounded-xl shadow-lg transition-all hover:scale-105 flex items-center justify-center gap-2">
-                          <RefreshCcw size={20} /> RETRY MISSION
-                      </button>
-                      <button onClick={onGoToStageSelect} className="bg-transparent border border-red-500/50 text-red-300 hover:text-white hover:border-white font-bold py-4 rounded-xl transition-all hover:scale-105 flex items-center justify-center gap-2">
-                          ABORT TO MENU
-                      </button>
-                  </div>
-              </div>
-          </div>
-      )}
-
       {/* --- MAIN HUD (Only Visible in Playing/Boss Phases) --- */}
       {isPlaying && (
         <>
-            {/* AUGMENT SELECTION OVERLAY */}
-            {gameState.isChoosingAugment && (
-                <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center z-50 pointer-events-auto animate-in fade-in duration-300">
-                    <div className="flex flex-col items-center gap-8 max-w-5xl w-full px-4">
-                        <div className="text-center">
-                            <h2 className="text-4xl font-black text-white uppercase tracking-tighter mb-2 drop-shadow-lg">System Upgrade Available</h2>
-                            <p className="text-slate-400 font-mono text-sm tracking-widest">SELECT AN ENHANCEMENT PROTOCOL</p>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
-                            {gameState.augmentChoices.map((aug) => {
-                                const isLegendary = aug.rarity === 'LEGENDARY';
-                                const isRare = aug.rarity === 'RARE';
-                                const borderColor = isLegendary ? 'border-amber-500' : isRare ? 'border-blue-500' : 'border-slate-600';
-                                const bgColor = isLegendary ? 'bg-amber-950/80' : isRare ? 'bg-blue-950/80' : 'bg-slate-900/80';
-                                const textColor = isLegendary ? 'text-amber-400' : isRare ? 'text-blue-400' : 'text-slate-300';
-                                
-                                return (
-                                    <button 
-                                        key={aug.id}
-                                        onClick={() => onPickAugment(aug)}
-                                        className={`
-                                            group relative flex flex-col p-6 rounded-2xl border-2 ${borderColor} ${bgColor} 
-                                            hover:scale-105 transition-all duration-300 text-left 
-                                            hover:shadow-2xl hover:shadow-${isLegendary ? 'amber' : isRare ? 'blue' : 'slate'}-500/30
-                                            overflow-hidden
-                                        `}
-                                    >
-                                        <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                                        
-                                        <div className="flex justify-between items-start mb-4 relative z-10">
-                                            <div className={`p-3 rounded-xl bg-black/30 border border-white/10 ${textColor}`}>
-                                                <Cpu size={32} />
-                                            </div>
-                                            <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded bg-black/50 border border-white/10 ${textColor}`}>
-                                                {aug.rarity}
-                                            </span>
-                                        </div>
-                                        
-                                        <h3 className="text-xl font-black text-white uppercase leading-none mb-3 group-hover:text-white transition-colors relative z-10">{aug.name}</h3>
-                                        <p className="text-xs text-slate-300 font-medium leading-relaxed group-hover:text-white transition-colors relative z-10 flex-grow">{aug.description}</p>
-                                        
-                                        <div className="mt-auto pt-6 w-full relative z-10">
-                                            <div className={`
-                                                w-full py-3 rounded-xl font-black text-center text-xs uppercase tracking-widest transition-all
-                                                ${isLegendary 
-                                                    ? 'bg-amber-600 text-white group-hover:bg-amber-500 shadow-lg shadow-amber-900/20' 
-                                                    : isRare 
-                                                        ? 'bg-blue-600 text-white group-hover:bg-blue-500 shadow-lg shadow-blue-900/20' 
-                                                        : 'bg-slate-700 text-slate-300 group-hover:bg-slate-600'}
-                                            `}>
-                                                Install Protocol
-                                            </div>
-                                        </div>
-                                    </button>
-                                )
-                            })}
-                        </div>
-                    </div>
-                </div>
-            )}
-
             <BossHealthBar gameState={gameState} />
             <AbilityHotbar gameState={gameState} onBatchTrigger={onBatchTrigger} />
 
