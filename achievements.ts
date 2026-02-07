@@ -126,14 +126,6 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     reward: 15,
     checkCondition: (_, __, event) => {
         if (!event || event.type !== 'TOWER_PLACED') return false;
-        // Check game stats logic handled in game loop, but checking here requires access to runtime stats.
-        // We'll rely on the event or check state in game loop.
-        // Since we pass event and state:
-        // Note: The state passed is the current state.
-        // We need to check if we have built all 4 types.
-        // GameStats tracks towersBuiltByType.
-        // BUT GameStats is on the State.
-        // We check if all 4 keys > 0
         return false; // Handled by complex logic below in checkAchievements
     }
   },
@@ -224,16 +216,9 @@ export function checkAchievements(
         }
         if (e.type === 'BOSS_KILLED') {
             nextMeta.stats.totalBossesDefeated++;
-            if (!nextMeta.achievementProgress.bossesDefeated.includes(e.bossId)) {
-                // Assuming ID might be unique per run but we want unique Boss TYPES?
-                // The Boss ID in event is instance ID. We need Type ID.
-                // Assuming event doesn't carry type, we might check activeBoss in state or pass it.
-                // For simplified logic, lets assume we tracked boss count. 
-                // To track unique bosses we'd need Boss Config ID passed in event.
-                // For now, let's just use the count check in the definition or ignore uniqueness strictly.
-                // Implementation detail: checkCondition uses array length, so we push something unique if possible.
-                // Let's just store the bossId for now, simpler.
-                nextMeta.achievementProgress.bossesDefeated.push(e.bossId);
+            // Unique boss tracking for 'camp_all_bosses'
+            if (!nextMeta.achievementProgress.bossesDefeated.includes(e.bossType)) {
+                nextMeta.achievementProgress.bossesDefeated.push(e.bossType);
             }
         }
         if (e.type === 'SUPPLY_COLLECTED') {
@@ -269,9 +254,7 @@ export function checkAchievements(
         
         // Special logic for "Full Arsenal" since checking state inside definition is tricky with array logic
         if (ach.id === 'ars_all_types') {
-             const types = Object.values(currentState.stats.towersBuiltByType);
              const uniqueBuilt = Object.keys(currentState.stats.towersBuiltByType).length;
-             // We need at least 4 types defined in TowerType enum
              if (uniqueBuilt >= 4) conditionMet = true;
         }
 

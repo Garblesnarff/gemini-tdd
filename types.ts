@@ -295,7 +295,7 @@ export interface AchievementProgress {
 
 export type AchievementEvent = 
   | { type: 'ENEMY_KILLED'; enemyType: EnemyType; damage: number; overkill: number; source: 'TOWER' | 'ABILITY' | 'BURN' }
-  | { type: 'BOSS_KILLED'; bossId: string }
+  | { type: 'BOSS_KILLED'; bossId: string; bossType: string }
   | { type: 'WAVE_COMPLETE'; waveNumber: number; livesLost: number }
   | { type: 'GAME_TICK' }
   | { type: 'STAGE_COMPLETE'; stageId: StageId; stats: GameStats }

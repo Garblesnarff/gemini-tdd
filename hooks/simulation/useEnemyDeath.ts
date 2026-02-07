@@ -16,7 +16,7 @@ export function processEnemyDeaths(enemies: Enemy[], towers: Tower[], gold: numb
       if (e.isBoss) {
         if (ctx.state.gamePhase !== 'BOSS_DEATH') {
             bossDefeated = true;
-            events.push({ type: 'BOSS_DEFEATED', bossId: e.id });
+            events.push({ type: 'BOSS_DEFEATED', bossId: e.id, bossType: e.bossConfig?.id || 'unknown' });
         }
         nextEnemies.push(e); 
       } else {

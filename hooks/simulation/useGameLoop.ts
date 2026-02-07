@@ -157,7 +157,7 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
             }
             if (e.type === 'BOSS_DEFEATED') {
                 gamePhase = 'BOSS_DEATH';
-                achievementEvents.push({ type: 'BOSS_KILLED', bossId: e.bossId });
+                achievementEvents.push({ type: 'BOSS_KILLED', bossId: e.bossId, bossType: e.bossType });
             }
         });
 

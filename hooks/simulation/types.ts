@@ -22,7 +22,7 @@ export type GameEvent =
   | { type: 'BOSS_PHASE_CHANGED'; bossId: string; newPhase: number; announcement: string }
   | { type: 'PROJECTILE_HIT'; targetId: string; damage: number; sourceType: TowerType }
   | { type: 'WAVE_COMPLETE'; waveNumber: number }
-  | { type: 'BOSS_DEFEATED'; bossId: string };
+  | { type: 'BOSS_DEFEATED'; bossId: string; bossType: string };
 
 export interface SimulationResult {
   stateUpdates: Partial<GameState>;
