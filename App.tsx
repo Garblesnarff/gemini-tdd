@@ -525,6 +525,7 @@ const App: React.FC = () => {
           const newEffects: Effect[] = [...prev.effects];
           const newHazards: Hazard[] = [...prev.hazards];
           const abilityEvents: AchievementEvent[] = [];
+          let abilitiesCount = 0;
           
           const newTowers = prev.towers.map(t => {
               const cfg = ABILITY_MATRIX[t.type][t.techPath];
@@ -534,10 +535,13 @@ const App: React.FC = () => {
                   newEffects.push(...res.newEffects);
                   newHazards.push(...res.newHazards);
                   abilityEvents.push({ type: 'ABILITY_USED', abilityType: type, towerType: t.type });
+                  abilitiesCount++;
                   return res.modifiedTower;
               }
               return t;
           });
+
+          if (abilitiesCount === 0) return prev;
 
           return { 
               ...prev, 
@@ -545,6 +549,7 @@ const App: React.FC = () => {
               enemies: currentEnemies,
               effects: newEffects, 
               hazards: newHazards,
+              stats: { ...prev.stats, abilitiesUsed: prev.stats.abilitiesUsed + abilitiesCount },
               pendingAchievementEvents: [...prev.pendingAchievementEvents, ...abilityEvents]
           };
       });
