@@ -76,5 +76,10 @@ export const clearSave = () => {
 };
 
 export const hasSaveData = (): boolean => {
+  try {
     return !!localStorage.getItem(SAVE_KEY);
+  } catch (error) {
+    console.warn('Failed to check for save data', error);
+    return false;
+  }
 };
