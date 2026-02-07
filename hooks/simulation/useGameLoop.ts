@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef } from 'react';
 import { GameState, AchievementEvent } from '../../types';
 import { buildSimulationContext } from './simulationUtils';
@@ -11,8 +10,8 @@ import { processEnemyDeaths } from './useEnemyDeath';
 import { simulateBoss } from './useBossSimulation';
 import { manageWaveState } from './useWaveManager';
 import { simulateHealers } from './useHealerSimulation';
-import { evaluateDirectorState } from './directorSystem';
 import { checkAchievements } from '../../achievements';
+import { saveGame } from '../../saveSystem';
 import { DIRECTOR_CONFIG, GRID_SIZE } from '../../constants';
 
 const TICK_RATE = 50;
@@ -115,7 +114,7 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
             stats.waveStreakNoLoss = 0;
         }
 
-        // 3. Healer Simulation (New Step)
+        // 3. Healer Simulation
         const healerRes = simulateHealers(enemies, ctx);
         enemies = healerRes.enemies;
         effects.push(...healerRes.newEffects);
@@ -198,9 +197,13 @@ export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<R
             gamePhase = 'GAME_OVER';
         }
 
-        // 11. Achievements
+        // 11. Achievements & Persistence
         achievementEvents.push({ type: 'GAME_TICK' });
         const { unlocked, updatedMeta } = checkAchievements(achievementEvents, { ...prev, gold, lives, stats, towers }, prev.metaProgress);
+        
+        if (unlocked.length > 0) {
+            saveGame(prev.stageProgress, updatedMeta);
+        }
         
         const newToasts = unlocked.map(ach => ({ achievement: ach, timestamp: Date.now() }));
 
