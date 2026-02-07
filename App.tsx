@@ -279,19 +279,16 @@ const App: React.FC = () => {
 
   // --- ACTIONS ---
 
-  const handleStartWave = useCallback(() => {
-    if (gameState.waveStatus !== 'IDLE' || gameState.isChoosingAugment) return;
-    
-    const nextWave = gameState.wave + 1;
-    const stageConfig = STAGE_CONFIGS[gameState.currentStage];
-    const waveDef = getWaveDefinition(gameState.currentStage, nextWave);
+  const triggerSpawning = useCallback((waveNum: number, stage: StageId, directorState: string) => {
+    const stageConfig = STAGE_CONFIGS[stage];
+    const waveDef = getWaveDefinition(stage, waveNum);
     
     const newQueue: {time: number, type: EnemyType, pathIndex: number, isElite: boolean}[] = [];
     let pIdx = 0;
     
     waveDef.composition.forEach(g => {
         const bursts = Math.ceil(g.count / (g.burstSize || 1));
-        const groupIsElite = gameState.directorState === 'PRESSURE' && Math.random() < DIRECTOR_CONFIG.ELITE_CHANCE;
+        const groupIsElite = directorState === 'PRESSURE' && Math.random() < DIRECTOR_CONFIG.ELITE_CHANCE;
 
         for(let b=0; b<bursts; b++) {
             const t = g.startDelay + b * g.interval;
@@ -308,32 +305,22 @@ const App: React.FC = () => {
         }
     });
 
-    if (nextWave === stageConfig.waves) {
+    if (waveNum === stageConfig.waves) {
         newQueue.push({ time: 5000, type: EnemyType.BOSS, pathIndex: 0, isElite: false });
     }
     
     newQueue.sort((a,b) => a.time - b.time);
     spawnQueueRef.current = newQueue;
     waveTimerRef.current = 0;
-    
-    setGameState(prev => {
-        const isAugmentWave = nextWave > 1 && (nextWave % 5 === 0);
-        let choices: Augment[] = [];
-        if (isAugmentWave) {
-             const pool = [...AUGMENT_POOL];
-             for(let k=0; k<3; k++) {
-                 const idx = Math.floor(Math.random() * pool.length);
-                 choices.push(pool.splice(idx, 1)[0]);
-             }
-        }
 
+    setGameState(prev => {
         const newSupplyDrops = [...prev.supplyDrops];
         if (prev.directorState === 'RELIEF' && Math.random() < DIRECTOR_CONFIG.SUPPLY_DROP_CHANCE) {
             const val = Math.floor(Math.random() * (DIRECTOR_CONFIG.SUPPLY_DROP_VALUE.MAX - DIRECTOR_CONFIG.SUPPLY_DROP_VALUE.MIN)) + DIRECTOR_CONFIG.SUPPLY_DROP_VALUE.MIN;
             let x = Math.floor((Math.random() - 0.5) * GRID_SIZE * 1.5);
             let z = Math.floor((Math.random() - 0.5) * GRID_SIZE * 1.5);
             newSupplyDrops.push({
-                id: Math.random().toString(),
+                id: `drop_${Date.now()}_${Math.random()}`,
                 position: { x, y: 0, z },
                 value: val,
                 lifetime: DIRECTOR_CONFIG.SUPPLY_DROP_LIFETIME,
@@ -343,10 +330,7 @@ const App: React.FC = () => {
 
         return {
             ...prev,
-            wave: nextWave,
             waveStatus: 'SPAWNING',
-            isChoosingAugment: isAugmentWave,
-            augmentChoices: choices,
             supplyDrops: newSupplyDrops,
             waveStats: {
                 ...prev.waveStats,
@@ -357,14 +341,40 @@ const App: React.FC = () => {
             waveIntel: prev.waveIntel || "Scanning enemy frequencies..."
         }
     });
+
+    const stageName = stageConfig.name;
+    getWaveIntel(waveNum, stageName).then(intel => {
+        if (intel) setGameState(p => ({ ...p, waveIntel: intel }));
+    });
+  }, []);
+
+  const handleStartWave = useCallback(() => {
+    if (gameState.waveStatus !== 'IDLE' || gameState.isChoosingAugment) return;
     
-    if (gameState.directorState === 'NEUTRAL') {
-        const stageName = STAGE_CONFIGS[gameState.currentStage].name;
-        getWaveIntel(nextWave, stageName).then(intel => {
-            if (intel) setGameState(p => ({ ...p, waveIntel: intel }));
+    const nextWave = gameState.wave + 1;
+    const isAugmentWave = nextWave > 1 && (nextWave % 5 === 0);
+    
+    if (isAugmentWave) {
+        setGameState(prev => {
+            const pool = [...AUGMENT_POOL];
+            const choices: Augment[] = [];
+            for(let k=0; k<3; k++) {
+                const idx = Math.floor(Math.random() * pool.length);
+                choices.push(pool.splice(idx, 1)[0]);
+            }
+            return {
+                ...prev,
+                wave: nextWave,
+                isChoosingAugment: true,
+                augmentChoices: choices,
+                waveStatus: 'IDLE'
+            };
         });
+    } else {
+        setGameState(prev => ({ ...prev, wave: nextWave }));
+        triggerSpawning(nextWave, gameState.currentStage, gameState.directorState);
     }
-  }, [gameState.wave, gameState.waveStatus, gameState.currentStage, gameState.directorState]);
+  }, [gameState.wave, gameState.waveStatus, gameState.currentStage, gameState.directorState, triggerSpawning]);
 
   const handlePlaceTower = (pos: Vector3Tuple) => { setPendingPlacement(pos); };
 
@@ -855,8 +865,11 @@ const App: React.FC = () => {
                  ...prev,
                  activeAugments: [...prev.activeAugments, aug],
                  augmentChoices: [],
-                 isChoosingAugment: false
+                 isChoosingAugment: false,
+                 waveStatus: 'IDLE' // Redundant but safe
              }));
+             // Trigger actual spawning for current wave number
+             triggerSpawning(gameState.wave, gameState.currentStage, gameState.directorState);
         }}
         onBatchTrigger={handleBatchTrigger}
         onGoToMenu={() => setGameState(p => ({ ...p, gamePhase: 'MENU' }))}
