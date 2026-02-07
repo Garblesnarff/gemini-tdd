@@ -46,27 +46,12 @@ export function simulateEnemyMovement(enemies: Enemy[], towers: Tower[], ctx: Si
         enemy.debuffs = enemy.debuffs.filter(db => {
             db.duration -= ctx.tickDelta;
             if (db.type === 'BURN') {
-                let tickDamage = (db.value || 0) * (ctx.tickDelta / 1000);
-                // Armor reduces DOT per tick, minimum 1 if armored but typically we check type
+                const val = db.value !== undefined ? db.value : 0;
+                let tickDamage = val * (ctx.tickDelta / 1000);
+                
                 if (enemy.type === EnemyType.ARMORED) {
                      const armor = (ENEMY_STATS[EnemyType.ARMORED] as any).armor || 10;
-                     // For small ticks this makes them immune often, but that's per design of flat armor vs DOTs
-                     // Let's assume minimum 1 damage per full second equivalent, 
-                     // or actually strictly apply armor per tick calc.
-                     // If tick is small (e.g. 2.5dmg), armor 10 reduces to <0. 
-                     // Let's clamp at a small fraction to prevent total immunity or stick to design.
-                     // Design says: "Burn DOT ticks are also reduced by armor per tick."
-                     // Assuming 'tick' here means the damage applied in this frame.
-                     // If frame damage is < armor, it does 1 damage (if we follow flat armor rules strictly).
                      tickDamage = Math.max(0.1, tickDamage - (armor * (ctx.tickDelta/1000))); 
-                     // Scaling armor by time delta to make it 'per second' reduction? 
-                     // No, armor is usually per hit. A DOT tick is a hit.
-                     // If armor is 10 flat, and burn is 50/sec. In 50ms tick, dmg is 2.5. Armor 10 blocks it fully.
-                     // This makes Armored immune to burn. Let's assume armor applies to the 'value' before time scaling? 
-                     // No, "armor reduction per hit". 
-                     // Let's stick to: effective_damage = max(0, raw - armor). 
-                     // Since DOT is continuous, we might want to just reduce the DOT rate.
-                     // Let's reduce the effective Burn Rate by armor/sec.
                 }
                 enemy.health -= tickDamage;
             }

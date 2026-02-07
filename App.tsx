@@ -419,13 +419,20 @@ const App: React.FC = () => {
       }
   };
 
-  const executeAbility = (prev: GameState, tower: Tower, type: ActiveAbilityType, targetPos?: Vector3Tuple): { newEffects: Effect[], newHazards: Hazard[], modifiedTower: Tower } => {
+  const executeAbility = (
+    prev: GameState, 
+    currentEnemies: Enemy[], 
+    tower: Tower, 
+    type: ActiveAbilityType, 
+    targetPos?: Vector3Tuple
+  ): { nextEnemies: Enemy[], newEffects: Effect[], newHazards: Hazard[], modifiedTower: Tower } => {
       const config = ABILITY_MATRIX[tower.type][tower.techPath];
-      if (!config) return { newEffects: [], newHazards: [], modifiedTower: tower };
+      if (!config) return { nextEnemies: currentEnemies, newEffects: [], newHazards: [], modifiedTower: tower };
 
       const newEffects: Effect[] = [];
       const newHazards: Hazard[] = [];
       let modTower = { ...tower };
+      let nextEnemies = [...currentEnemies];
 
       // Apply Meta Multipliers
       const tech = tower.techPath;
@@ -441,24 +448,30 @@ const App: React.FC = () => {
           const effectType = type === ActiveAbilityType.TEMPORAL_ANCHOR ? 'FREEZE_WAVE' : 'NOVA';
           newEffects.push({ id: Math.random().toString(), type: effectType, position: { ...tower.position }, color: config.color, scale: config.range || 5, lifetime: 40, maxLifetime: 40 });
           
-          prev.enemies.forEach(e => {
+          nextEnemies = nextEnemies.map(e => {
              const dist = Math.sqrt(Math.pow(e.position.x - tower.position.x, 2) + Math.pow(e.position.z - tower.position.z, 2));
              if (dist <= (config.range || 5)) {
-                 if (type === ActiveAbilityType.ERUPTION) e.health -= ((config.damage || 0) * dmgMult);
+                 const nextE = { ...e };
+                 if (type === ActiveAbilityType.ERUPTION) nextE.health -= ((config.damage || 0) * dmgMult);
                  if (type === ActiveAbilityType.TEMPORAL_ANCHOR) {
-                     e.freezeTimer = (config.duration || 4000) * durMult;
-                     e.frozen = 0;
+                     nextE.freezeTimer = (config.duration || 4000) * durMult;
+                     nextE.frozen = 0;
                  }
+                 return nextE;
              }
+             return e;
           });
       }
       else if (config.type === 'TARGETED_AOE' && targetPos) {
           // ORBITAL, NAPALM, SINGULARITY
           if (type === ActiveAbilityType.ORBITAL_STRIKE) {
               newEffects.push({ id: Math.random().toString(), type: 'ORBITAL_STRIKE', position: targetPos, color: config.color, scale: config.range || 4, lifetime: 60, maxLifetime: 60 });
-              prev.enemies.forEach(e => {
+              nextEnemies = nextEnemies.map(e => {
                   const d = Math.sqrt(Math.pow(e.position.x - targetPos.x, 2) + Math.pow(e.position.z - targetPos.z, 2));
-                  if (d <= (config.range || 4)) e.health -= ((config.damage || 0) * dmgMult);
+                  if (d <= (config.range || 4)) {
+                      return { ...e, health: e.health - ((config.damage || 0) * dmgMult) };
+                  }
+                  return e;
               });
           }
           else if (type === ActiveAbilityType.NAPALM || type === ActiveAbilityType.SINGULARITY) {
@@ -494,7 +507,7 @@ const App: React.FC = () => {
           }
       }
 
-      return { newEffects, newHazards, modifiedTower: modTower };
+      return { nextEnemies, newEffects, newHazards, modifiedTower: modTower };
   };
 
   const handleBatchTrigger = useCallback((type: ActiveAbilityType) => {
@@ -508,6 +521,7 @@ const App: React.FC = () => {
               return { ...prev, targetingAbility: type };
           }
 
+          let currentEnemies = [...prev.enemies];
           const newEffects: Effect[] = [...prev.effects];
           const newHazards: Hazard[] = [...prev.hazards];
           const abilityEvents: AchievementEvent[] = [];
@@ -515,7 +529,8 @@ const App: React.FC = () => {
           const newTowers = prev.towers.map(t => {
               const cfg = ABILITY_MATRIX[t.type][t.techPath];
               if (cfg?.id === type && t.abilityCooldown <= 0) {
-                  const res = executeAbility(prev, t, type);
+                  const res = executeAbility(prev, currentEnemies, t, type);
+                  currentEnemies = res.nextEnemies;
                   newEffects.push(...res.newEffects);
                   newHazards.push(...res.newHazards);
                   abilityEvents.push({ type: 'ABILITY_USED', abilityType: type, towerType: t.type });
@@ -527,6 +542,7 @@ const App: React.FC = () => {
           return { 
               ...prev, 
               towers: newTowers, 
+              enemies: currentEnemies,
               effects: newEffects, 
               hazards: newHazards,
               pendingAchievementEvents: [...prev.pendingAchievementEvents, ...abilityEvents]
@@ -546,12 +562,13 @@ const App: React.FC = () => {
                return { ...prev, targetingAbility: cfg.id as ActiveAbilityType };
           }
 
-          const res = executeAbility(prev, tower, cfg.id as ActiveAbilityType);
+          const res = executeAbility(prev, prev.enemies, tower, cfg.id as ActiveAbilityType);
           const newTowers = prev.towers.map(t => t.id === towerId ? res.modifiedTower : t);
           
           return { 
               ...prev, 
               towers: newTowers, 
+              enemies: res.nextEnemies,
               effects: [...prev.effects, ...res.newEffects], 
               hazards: [...prev.hazards, ...res.newHazards],
               stats: { ...prev.stats, abilitiesUsed: prev.stats.abilitiesUsed + 1 },
@@ -576,7 +593,7 @@ const App: React.FC = () => {
           if (readyTowerIndex === -1) return { ...prev, targetingAbility: null };
 
           const tower = prev.towers[readyTowerIndex];
-          const res = executeAbility(prev, tower, type, pos);
+          const res = executeAbility(prev, prev.enemies, tower, type, pos);
 
           const newTowers = [...prev.towers];
           newTowers[readyTowerIndex] = res.modifiedTower;
@@ -584,6 +601,7 @@ const App: React.FC = () => {
           return {
               ...prev,
               towers: newTowers,
+              enemies: res.nextEnemies,
               effects: [...prev.effects, ...res.newEffects],
               hazards: [...prev.hazards, ...res.newHazards],
               targetingAbility: null,

@@ -98,14 +98,22 @@ export function simulateBoss(enemies: Enemy[], towers: Tower[], hazards: Hazard[
       }
       else if (ability.type === BossAbilityType.SPEED_BURST) {
          if (!boss.activeBuffs) boss.activeBuffs = [];
-         boss.activeBuffs.push({ type: 'SPEED', duration: ability.duration || 3000, value: ability.value !== undefined ? ability.value : 1.5 });
+         boss.activeBuffs.push({ 
+             type: 'SPEED', 
+             duration: ability.duration || 3000, 
+             value: ability.value !== undefined ? ability.value : 1.5 
+         });
          newEffects.push({ id: Math.random().toString(), type: 'SPARK', position: boss.position, color: '#facc15', scale: 2, lifetime: 30, maxLifetime: 30 });
          announcement = "SPEED SURGE";
          triggered = true;
       }
       else if (ability.type === BossAbilityType.REGEN) {
          if (!boss.activeBuffs) boss.activeBuffs = [];
-         boss.activeBuffs.push({ type: 'REGEN', duration: ability.duration || 5000, value: ability.value !== undefined ? ability.value : 0.1 }); 
+         boss.activeBuffs.push({ 
+             type: 'REGEN', 
+             duration: ability.duration || 5000, 
+             value: ability.value !== undefined ? ability.value : 0.1 
+         }); 
          announcement = "REGENERATING";
          triggered = true;
       }

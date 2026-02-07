@@ -158,7 +158,8 @@ function processDirectHit(
     // --- Damage Modifiers ---
     const mark = target.debuffs?.find(d => d.type === 'VOID_MARK');
     if (mark && !p.isVoidMark) {
-        damage *= (mark.value || 1.5);
+        const markVal = mark.value !== undefined ? mark.value : 1.5;
+        damage *= markVal;
     }
 
     // --- Armored Reduction ---
@@ -250,7 +251,10 @@ function processArtilleryHit(pos: {x:number, y:number, z:number}, p: Projectile,
       let dmg = p.damage * damageMult;
       
       const mark = e.debuffs?.find(db => db.type === 'VOID_MARK');
-      if (mark) dmg *= (mark.value || 1.5);
+      if (mark) {
+          const markVal = mark.value !== undefined ? mark.value : 1.5;
+          dmg *= markVal;
+      }
 
       // Artillery Ignores Armor
       
