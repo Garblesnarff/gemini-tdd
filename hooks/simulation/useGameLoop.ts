@@ -20,29 +20,30 @@ const TICK_RATE = 50;
 export function useGameLoop(gameState: GameState, setGameState: React.Dispatch<React.SetStateAction<GameState>>) {
   const lastTickRef = useRef(Date.now());
   const supplyDropTimerRef = useRef(0);
-  const pauseTimerRef = useRef(0);
-  const lastTimeRef = useRef(Date.now());
-
-  useEffect(() => {
-    const now = Date.now();
-    if (gameState.gamePhase === 'PLAYING' && gameState.gameSpeed === 0) {
-        pauseTimerRef.current += (now - lastTimeRef.current);
-    }
-    lastTimeRef.current = now;
-  });
 
   useEffect(() => {
     if (gameState.gamePhase !== 'PLAYING' && 
         gameState.gamePhase !== 'BOSS_FIGHT' && 
-        gameState.gamePhase !== 'BOSS_DEATH') return;
-    if (gameState.isGameOver || gameState.isChoosingAugment) return;
+        gameState.gamePhase !== 'BOSS_DEATH') {
+        lastTickRef.current = Date.now();
+        return;
+    }
+    
+    if (gameState.isGameOver || gameState.isChoosingAugment) {
+        lastTickRef.current = Date.now();
+        return;
+    }
 
     const interval = setInterval(() => {
+      const now = Date.now();
+      const actualDelta = now - lastTickRef.current;
+      lastTickRef.current = now;
+
       setGameState(prev => {
         if (prev.gameSpeed === 0) {
             return { 
                 ...prev, 
-                stats: { ...prev.stats, pauseDuration: prev.stats.pauseDuration + TICK_RATE } 
+                stats: { ...prev.stats, pauseDuration: prev.stats.pauseDuration + actualDelta } 
             };
         }
         
