@@ -1,8 +1,8 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { GameState, TowerType, TechPath, ActiveAbilityType, TargetPriority, Vector3Tuple, Augment, StageId, BossAbilityType, Tower } from '../types';
 import { TOWER_STATS, TECH_PATH_INFO, UPGRADE_CONFIG, MAX_LEVEL, SELL_REFUND_RATIO, ABILITY_MATRIX, STAGE_CONFIGS } from '../constants';
-import { Heart, Coins, Swords, Shield, Zap, Info, ChevronRight, ChevronLeft, RefreshCcw, Radio, Eye, X, ArrowUpCircle, Check, Play, Pause, FastForward, Trash2, Crosshair, Target, Cpu, Flame, Snowflake, Ghost, Bomb, Lock, Star, Map, Skull, Timer, Medal, AlertCircle, Package, Database } from 'lucide-react';
+import { Heart, Coins, Swords, Shield, Zap, Info, ChevronRight, ChevronLeft, RefreshCcw, Radio, Eye, X, ArrowUpCircle, Check, Play, Pause, FastForward, Trash2, Crosshair, Target, Cpu, Flame, Snowflake, Ghost, Bomb, Lock, Star, Map, Skull, Timer, Medal, AlertCircle, Package, Database, Trophy, Home, HelpCircle } from 'lucide-react';
 
 interface HUDProps {
   gameState: GameState;
@@ -30,7 +30,92 @@ interface HUDProps {
   totalWaves: number;
   onOpenShop: () => void;
   onOpenAchievements: () => void;
+  setTutorialStep?: (step: number | null) => void;
+  finishTutorial?: () => void;
 }
+
+const Tooltip: React.FC<{ children: React.ReactNode, text: string | React.ReactNode, position?: 'top' | 'bottom' | 'left' | 'right' }> = ({ children, text, position = 'top' }) => {
+    const [visible, setVisible] = useState(false);
+    return (
+        <div className="relative group" onMouseEnter={() => setVisible(true)} onMouseLeave={() => setVisible(false)}>
+            {children}
+            {visible && (
+                <div className={`absolute z-[100] w-max max-w-[200px] pointer-events-none p-2 bg-slate-900 border border-slate-700 rounded shadow-2xl text-[10px] text-slate-300 font-bold leading-tight
+                    ${position === 'top' ? 'bottom-full left-1/2 -translate-x-1/2 mb-2' : 
+                      position === 'bottom' ? 'top-full left-1/2 -translate-x-1/2 mt-2' :
+                      position === 'left' ? 'right-full top-1/2 -translate-y-1/2 mr-2' : 
+                      'left-full top-1/2 -translate-y-1/2 ml-2'}
+                 animate-in fade-in zoom-in-95 duration-150`}>
+                    {text}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const TutorialOverlay: React.FC<{ step: number, onNext: () => void, onSkip: () => void }> = ({ step, onNext, onSkip }) => {
+    const steps = [
+        {
+            title: "TOWER DEPLOYMENT",
+            text: "Select a tower type from the hangar at the bottom and click on the grid to deploy. Each type has unique range, fire rate, and damage characteristics.",
+            target: "bottom",
+            icon: Cpu
+        },
+        {
+            title: "TARGETING PROTOCOLS",
+            text: "Click a deployed tower to open its command module. You can set targeting priorities (First, Strongest, or Weakest) and initiate tech upgrades.",
+            target: "center",
+            icon: Target
+        },
+        {
+            title: "TECH PATHS",
+            text: "Upgrade towers to unlock Magma (Damage), Plasma (Speed), or Void (Range) tech paths. Each path grants specialized passives and active abilities.",
+            target: "bottom",
+            icon: Cpu
+        },
+        {
+            title: "POWER GRID",
+            text: "Active abilities are grouped by tech in the Hotbar on the left. Once charged, use them to unleash devastating batch attacks on the enemy waves.",
+            target: "left",
+            icon: Flame
+        },
+        {
+            title: "MISSION SUCCESS",
+            text: "Earn up to 3 Stars per stage based on lives preserved. Stars unlock advanced persistent upgrades in the Armory.",
+            target: "top",
+            icon: Star
+        }
+    ];
+
+    const current = steps[step - 1];
+    if (!current) return null;
+
+    return (
+        <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center z-[200] pointer-events-auto backdrop-blur-[2px]">
+            <div className={`bg-slate-900 border-2 border-blue-500/50 p-8 rounded-3xl max-w-lg shadow-2xl shadow-blue-500/20 flex flex-col items-center gap-6 animate-in zoom-in-95 duration-300
+                ${current.target === 'bottom' ? 'mb-40' : current.target === 'left' ? 'ml-64' : ''}`}>
+                <div className="bg-blue-600/20 p-4 rounded-2xl">
+                    <current.icon size={48} className="text-blue-400" />
+                </div>
+                <div className="text-center">
+                    <h2 className="text-3xl font-black text-white uppercase tracking-tighter mb-2">{current.title}</h2>
+                    <p className="text-slate-400 font-medium leading-relaxed">{current.text}</p>
+                </div>
+                <div className="flex gap-4 w-full mt-2">
+                    <button onClick={onSkip} className="flex-1 py-3 text-slate-500 font-bold uppercase tracking-wider text-xs hover:text-white transition-colors">Skip Tutorial</button>
+                    <button onClick={onNext} className="flex-1 py-4 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-xl shadow-lg transition-all hover:scale-105 active:scale-95 uppercase tracking-widest text-sm flex items-center justify-center gap-2">
+                        {step === steps.length ? "Initiate Combat" : "Understood"} <ChevronRight size={18} />
+                    </button>
+                </div>
+                <div className="flex gap-1.5 mt-2">
+                    {steps.map((_, i) => (
+                        <div key={i} className={`w-2 h-2 rounded-full ${i + 1 === step ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]' : 'bg-slate-800'}`} />
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
 
 const AbilityHotbar: React.FC<{ 
     gameState: GameState, 
@@ -38,23 +123,22 @@ const AbilityHotbar: React.FC<{
 }> = ({ gameState, onBatchTrigger }) => {
     const [openMenu, setOpenMenu] = useState<string | null>(null);
     
-    // Group abilities based on function/path concept
     const abilityGroups = useMemo(() => {
         const groups = [
             { 
                 id: 'PWR-A',
                 types: [ActiveAbilityType.ERUPTION, ActiveAbilityType.ORBITAL_STRIKE, ActiveAbilityType.IGNITION_BURST, ActiveAbilityType.NAPALM],
-                label: 'PWR-A', key: '1', color: 'red', icon: Flame 
+                label: 'PWR-A', key: '1', color: 'red', icon: Flame, tooltip: "MAGMA BURST: Direct damage and burn effects."
             },
             {
                 id: 'PWR-B',
                 types: [ActiveAbilityType.OVERCLOCK, ActiveAbilityType.PERFORATION, ActiveAbilityType.CHAIN_LIGHTNING, ActiveAbilityType.BARRAGE],
-                label: 'PWR-B', key: '2', color: 'cyan', icon: Zap
+                label: 'PWR-B', key: '2', color: 'cyan', icon: Zap, tooltip: "PLASMA PULSE: Speed buffs and multi-hit arcing."
             },
             {
                 id: 'PWR-C',
                 types: [ActiveAbilityType.TEMPORAL_ANCHOR, ActiveAbilityType.VOID_MARK, ActiveAbilityType.ENTROPY_FIELD, ActiveAbilityType.SINGULARITY],
-                label: 'PWR-C', key: '3', color: 'purple', icon: Snowflake
+                label: 'PWR-C', key: '3', color: 'purple', icon: Snowflake, tooltip: "VOID REACH: Stuns, roots, and gravity control."
             }
         ];
         
@@ -101,11 +185,7 @@ const AbilityHotbar: React.FC<{
                 
                 const handlePrimaryClick = () => {
                     if (!hasAnyReady) return;
-                    
-                    // Fire all instants immediately
                     group.readyInstants.forEach(type => onBatchTrigger(type));
-
-                    // Handle targeted
                     if (group.readyTargeted.length === 1) {
                         onBatchTrigger(group.readyTargeted[0]);
                     } else if (group.readyTargeted.length > 1) {
@@ -114,47 +194,41 @@ const AbilityHotbar: React.FC<{
                 };
 
                 return (
-                    <div key={group.id} className="relative flex items-center">
-                        <button
-                            onClick={handlePrimaryClick}
-                            onContextMenu={(e) => { e.preventDefault(); if (group.readyTargeted.length > 1) setOpenMenu(group.id); }}
-                            disabled={!hasAnyReady && group.currentCd === 0}
-                            className={`
-                                group relative w-16 h-16 rounded-xl border-2 flex flex-col items-center justify-center transition-all duration-200 overflow-hidden
-                                ${!hasAnyReady && group.currentCd === 0 ? 'opacity-20 bg-slate-900 border-slate-800 grayscale cursor-not-allowed' : 
-                                  hasAnyReady 
-                                        ? `bg-slate-900/80 border-${group.color}-500/50 hover:border-${group.color}-400 shadow-[0_0_15px_rgba(59,130,246,0.2)] active:scale-95` 
-                                        : 'bg-slate-950/90 border-slate-800 cursor-not-allowed grayscale'}
-                            `}
-                        >
-                            {group.currentCd > 0 && !hasAnyReady && (
-                                <div 
-                                    className="absolute bottom-0 left-0 right-0 bg-slate-800/80 origin-bottom z-0"
-                                    style={{ height: `${progress}%` }}
-                                />
-                            )}
-
-                            <div className="relative z-10 flex flex-col items-center">
-                                <group.icon size={24} className={hasAnyReady ? `text-${group.color}-400` : 'text-slate-500'} />
-                                <span className="text-[9px] font-black uppercase tracking-tighter mt-1 opacity-70">
-                                    {group.label}
-                                </span>
-                            </div>
-
-                            {hasAnyReady && (
-                                <div className={`absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black border border-slate-800 shadow-lg z-20
-                                    ${hasAnyReady ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400'}
-                                `}>
-                                    {group.readyCount}
+                    <Tooltip key={group.id} text={group.tooltip} position="right">
+                        <div className="relative flex items-center">
+                            <button
+                                onClick={handlePrimaryClick}
+                                onContextMenu={(e) => { e.preventDefault(); if (group.readyTargeted.length > 1) setOpenMenu(group.id); }}
+                                disabled={!hasAnyReady && group.currentCd === 0}
+                                className={`
+                                    group relative w-16 h-16 rounded-xl border-2 flex flex-col items-center justify-center transition-all duration-200 overflow-hidden
+                                    ${!hasAnyReady && group.currentCd === 0 ? 'opacity-20 bg-slate-900 border-slate-800 grayscale cursor-not-allowed' : 
+                                    hasAnyReady 
+                                            ? `bg-slate-900/80 border-${group.color}-500/50 hover:border-${group.color}-400 shadow-[0_0_15px_rgba(59,130,246,0.2)] active:scale-95` 
+                                            : 'bg-slate-950/90 border-slate-800 cursor-not-allowed grayscale'}
+                                `}
+                            >
+                                {group.currentCd > 0 && !hasAnyReady && (
+                                    <div 
+                                        className="absolute bottom-0 left-0 right-0 bg-slate-800/80 origin-bottom z-0"
+                                        style={{ height: `${progress}%` }}
+                                    />
+                                )}
+                                <div className="relative z-10 flex flex-col items-center">
+                                    <group.icon size={24} className={hasAnyReady ? `text-${group.color}-400` : 'text-slate-500'} />
+                                    <span className="text-[9px] font-black uppercase tracking-tighter mt-1 opacity-70">
+                                        {group.label}
+                                    </span>
                                 </div>
-                            )}
-                        </button>
-
-                        {/* Targeted Selection Sub-menu */}
-                        {openMenu === group.id && (
-                            <div className="absolute left-20 flex gap-2 animate-in slide-in-from-left-2 fade-in duration-200">
-                                {group.readyTargeted.map(type => {
-                                    return (
+                                {hasAnyReady && (
+                                    <div className={`absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black border border-slate-800 shadow-lg z-20 bg-blue-500 text-white`}>
+                                        {group.readyCount}
+                                    </div>
+                                )}
+                            </button>
+                            {openMenu === group.id && (
+                                <div className="absolute left-20 flex gap-2 animate-in slide-in-from-left-2 fade-in duration-200">
+                                    {group.readyTargeted.map(type => (
                                         <button
                                             key={type}
                                             onClick={() => { onBatchTrigger(type); setOpenMenu(null); }}
@@ -163,12 +237,12 @@ const AbilityHotbar: React.FC<{
                                         >
                                             <Crosshair size={18} />
                                         </button>
-                                    );
-                                })}
-                                <button onClick={() => setOpenMenu(null)} className="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center self-center"><X size={14}/></button>
-                            </div>
-                        )}
-                    </div>
+                                    ))}
+                                    <button onClick={() => setOpenMenu(null)} className="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center self-center"><X size={14}/></button>
+                                </div>
+                            )}
+                        </div>
+                    </Tooltip>
                 );
             })}
         </div>
@@ -178,15 +252,9 @@ const AbilityHotbar: React.FC<{
 const BossHealthBar: React.FC<{ gameState: GameState }> = ({ gameState }) => {
     const boss = gameState.activeBoss;
     if (!boss || boss.health <= 0) return null;
-
     const healthPct = (boss.health / boss.maxHealth) * 100;
     const config = boss.bossConfig;
-    const phase = boss.currentPhase || 0;
-    
-    const markers = config.phases
-        .filter(p => p.healthThreshold < 1.0)
-        .map(p => p.healthThreshold * 100);
-
+    const markers = config.phases.filter(p => p.healthThreshold < 1.0).map(p => p.healthThreshold * 100);
     return (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 w-full max-w-2xl flex flex-col items-center pointer-events-none animate-in slide-in-from-top-4 duration-500 z-50">
              <div className="flex flex-col items-center mb-2">
@@ -197,9 +265,7 @@ const BossHealthBar: React.FC<{ gameState: GameState }> = ({ gameState }) => {
                  </div>
                  <span className="text-xs font-bold text-red-400 tracking-[0.3em] uppercase">{config.title}</span>
              </div>
-             
              <div className="relative w-full h-8 bg-slate-950 border-2 border-red-900/50 rounded-lg overflow-hidden shadow-[0_0_30px_rgba(220,38,38,0.3)]">
-                 <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,0,0,0.1)_25%,rgba(255,0,0,0.1)_50%,transparent_50%,transparent_75%,rgba(255,0,0,0.1)_75%,rgba(255,0,0,0.1)_100%)] bg-[length:20px_20px] animate-[pulse_2s_infinite]" />
                  <div 
                     className="absolute inset-0 bg-gradient-to-r from-red-700 via-red-600 to-red-500 transition-all duration-300 ease-out" 
                     style={{ width: `${healthPct}%` }}
@@ -212,49 +278,6 @@ const BossHealthBar: React.FC<{ gameState: GameState }> = ({ gameState }) => {
                  <div className="absolute inset-0 flex items-center justify-center">
                      <span className="text-xs font-bold text-white drop-shadow-md">{Math.ceil(boss.health)} / {boss.maxHealth}</span>
                  </div>
-             </div>
-
-             <div className="flex items-center justify-between w-full px-2 mt-2">
-                <div className="flex items-center gap-2">
-                    {config.phases.map((p, i) => (
-                        <div 
-                            key={i} 
-                            className={`
-                                h-1.5 w-6 rounded-full transition-all duration-300
-                                ${i <= phase 
-                                    ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]' 
-                                    : 'bg-slate-800'}
-                            `}
-                        />
-                    ))}
-                    <span className="text-[10px] font-bold text-red-400 ml-1 uppercase">PHASE {phase + 1}</span>
-                </div>
-
-                <div className="flex gap-2">
-                    {config.abilities.map(ability => {
-                        const cooldown = boss.abilityCooldowns?.[ability.id] || 0;
-                        const isReady = cooldown <= 0;
-                        let Icon = Zap;
-                        if (ability.type === BossAbilityType.SHIELD_PULSE) Icon = Shield;
-                        if (ability.type === BossAbilityType.SPAWN_MINIONS) Icon = Ghost;
-
-                        return (
-                            <div key={ability.id} className="relative group">
-                                <div className={`
-                                    w-6 h-6 rounded flex items-center justify-center border transition-colors
-                                    ${isReady ? 'bg-red-900/80 border-red-500 text-red-400 shadow-[0_0_10px_rgba(220,38,38,0.5)]' : 'bg-slate-900 border-slate-700 text-slate-600'}
-                                `}>
-                                    <Icon size={14} />
-                                </div>
-                                {cooldown > 0 && (
-                                    <div className="absolute inset-0 bg-black/50 rounded flex items-center justify-center text-[8px] text-white font-mono">
-                                        {(cooldown / 1000).toFixed(0)}
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
              </div>
         </div>
     );
@@ -285,21 +308,20 @@ const HUD: React.FC<HUDProps> = ({
   onNewGame,
   totalWaves,
   onOpenShop,
-  onOpenAchievements
+  onOpenAchievements,
+  setTutorialStep,
+  finishTutorial
 }) => {
   const selectedTower = gameState.selectedTowerId 
     ? gameState.towers.find(t => t.id === gameState.selectedTowerId) 
     : null;
-
   const baseStats = selectedTower ? TOWER_STATS[selectedTower.type] : null;
   const isPlaying = gameState.gamePhase === 'PLAYING' || gameState.gamePhase === 'BOSS_FIGHT' || gameState.gamePhase === 'BOSS_DEATH';
 
-  // Apply Meta Cost Reduction
   const getTowerCost = (baseCost: number) => {
       if (!gameState.metaEffects) return baseCost;
       return Math.floor(baseCost * gameState.metaEffects.towerCostMultiplier);
   };
-
   const getSellValue = (towerInvested: number) => {
       const ratio = gameState.metaEffects ? (SELL_REFUND_RATIO + (gameState.metaEffects.sellRatio - 0.7)) : SELL_REFUND_RATIO;
       return Math.floor(towerInvested * ratio);
@@ -308,6 +330,21 @@ const HUD: React.FC<HUDProps> = ({
   return (
     <div className="fixed inset-0 pointer-events-none p-4 md:p-6 select-none font-sans z-10">
       
+      {/* Tutorial Overlay */}
+      {gameState.tutorialStep !== null && (
+          <TutorialOverlay 
+            step={gameState.tutorialStep} 
+            onNext={() => {
+                if (gameState.tutorialStep === 5) {
+                    finishTutorial?.();
+                } else {
+                    setTutorialStep?.(gameState.tutorialStep! + 1);
+                }
+            }} 
+            onSkip={() => finishTutorial?.()} 
+          />
+      )}
+
       {/* --- MENU OVERLAY --- */}
       {gameState.gamePhase === 'MENU' && (
          <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-50 pointer-events-auto">
@@ -316,27 +353,24 @@ const HUD: React.FC<HUDProps> = ({
                     <h1 className="text-7xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-blue-500 tracking-tighter drop-shadow-2xl">GEMINI STRIKE</h1>
                     <p className="text-slate-400 font-mono tracking-widest text-sm mt-2">TACTICAL DEFENSE SIMULATION</p>
                  </div>
-                 
                  <div className="flex flex-col gap-4 w-64">
                     {canContinue && (
                         <button onClick={onContinue} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2">
-                            <Play size={20} fill="currentColor" />
-                            CONTINUE
+                            <Play size={20} fill="currentColor" /> CONTINUE
                         </button>
                     )}
                     <button onClick={onNewGame} className="bg-transparent border border-slate-600 hover:border-white text-slate-300 hover:text-white font-bold py-4 rounded-xl transition-all hover:scale-105 flex items-center justify-center gap-2">
                         {canContinue ? 'NEW OPERATION' : 'INITIATE'}
                     </button>
                     <button onClick={onOpenAchievements} className="bg-transparent border border-slate-700 hover:border-yellow-500/50 text-slate-400 hover:text-yellow-400 font-bold py-4 rounded-xl transition-all hover:scale-105 flex items-center justify-center gap-2">
-                        <Medal size={20} />
-                        ACHIEVEMENTS
+                        <Medal size={20} /> ACHIEVEMENTS
                     </button>
                  </div>
              </div>
          </div>
       )}
 
-      {/* --- STAGE SELECT (Modified to include achievements) --- */}
+      {/* --- STAGE SELECT --- */}
       {gameState.gamePhase === 'STAGE_SELECT' && (
           <div className="absolute inset-0 bg-slate-900/90 backdrop-blur-md flex flex-col z-40 pointer-events-auto">
               <div className="p-8">
@@ -344,6 +378,14 @@ const HUD: React.FC<HUDProps> = ({
                         <button onClick={onGoToMenu} className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors font-bold uppercase tracking-wider text-sm"><ChevronLeft size={20} /> Abort Mission</button>
                         <h1 className="text-4xl font-black text-white uppercase tracking-tighter">Mission Select</h1>
                         <div className="flex items-center gap-4">
+                            <div className="flex flex-col items-end mr-4">
+                                <div className="text-[10px] text-slate-500 uppercase font-black tracking-widest">Star Rating Guide</div>
+                                <div className="flex gap-2">
+                                    <div className="flex items-center gap-1 text-[9px] text-slate-400 font-bold"><Star size={10} className="text-yellow-500 fill-yellow-500" />1: Clear</div>
+                                    <div className="flex items-center gap-1 text-[9px] text-slate-400 font-bold"><Star size={10} className="text-yellow-500 fill-yellow-500" />2: 10+ HP</div>
+                                    <div className="flex items-center gap-1 text-[9px] text-slate-400 font-bold"><Star size={10} className="text-yellow-500 fill-yellow-500" />3: 15+ HP</div>
+                                </div>
+                            </div>
                             <button onClick={onOpenAchievements} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold uppercase text-xs transition-colors border border-slate-700">
                                 <Medal size={16} className="text-yellow-500" /> Records
                             </button>
@@ -352,7 +394,6 @@ const HUD: React.FC<HUDProps> = ({
                             </button>
                         </div>
                   </div>
-                  
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 max-w-7xl mx-auto">
                       {Object.values(STAGE_CONFIGS).map(config => {
                           const progress = gameState.stageProgress[config.id];
@@ -381,13 +422,113 @@ const HUD: React.FC<HUDProps> = ({
           </div>
       )}
 
-      {/* --- MAIN HUD (Only Visible in Playing/Boss Phases) --- */}
+      {/* --- VICTORY SCREEN --- */}
+      {gameState.gamePhase === 'STAGE_COMPLETE' && (
+          <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-2xl flex flex-col items-center justify-center z-[100] pointer-events-auto p-4 animate-in fade-in duration-700">
+              <div className="max-w-md w-full flex flex-col items-center gap-8 text-center animate-in slide-in-from-bottom-8 duration-500">
+                  <div className="flex flex-col items-center gap-2">
+                    <Trophy className="text-yellow-400 w-20 h-20 drop-shadow-[0_0_20px_rgba(250,204,21,0.5)] animate-bounce" />
+                    <h1 className="text-5xl font-black text-white uppercase tracking-tighter">Mission Accomplished</h1>
+                    <p className="text-blue-400 font-mono text-sm tracking-[0.3em] uppercase">{STAGE_CONFIGS[gameState.currentStage].name} SECURED</p>
+                  </div>
+
+                  <div className="flex gap-4">
+                      {[1, 2, 3].map((star) => {
+                          const earned = star <= gameState.stageProgress[gameState.currentStage].stars;
+                          return (
+                              <Star 
+                                key={star} 
+                                size={48} 
+                                className={`transition-all duration-1000 delay-${star * 200} ${earned ? 'text-yellow-400 fill-yellow-400 drop-shadow-[0_0_15px_rgba(250,204,21,0.8)]' : 'text-slate-800'}`} 
+                              />
+                          );
+                      })}
+                  </div>
+
+                  <div className="w-full bg-slate-900/50 border border-slate-800 rounded-2xl p-6 flex flex-col gap-4">
+                      <div className="flex justify-between items-center text-sm font-bold uppercase tracking-wider text-slate-400">
+                          <span>Neutralized Targets</span>
+                          <span className="text-white font-mono">{gameState.stats.enemiesKilled}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-sm font-bold uppercase tracking-wider text-slate-400">
+                          <span>Lives Preserved</span>
+                          <span className="text-green-400 font-mono">{Math.floor(gameState.lives)}</span>
+                      </div>
+                      <div className="h-px bg-slate-800" />
+                      <div className="flex justify-between items-center">
+                          <span className="text-lg font-black uppercase text-emerald-400">Data Cores Earned</span>
+                          <div className="flex items-center gap-2 text-3xl font-black text-emerald-400">
+                              <Database size={24} />
+                              {gameState.stats.coresEarned || 0}
+                          </div>
+                      </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3 w-full">
+                      <button 
+                        onClick={onGoToStageSelect} 
+                        className="bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-xl shadow-xl shadow-blue-600/30 transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2 uppercase tracking-widest"
+                      >
+                        <Check size={20} /> Deploy Next Mission
+                      </button>
+                      <button 
+                        onClick={onOpenShop} 
+                        className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 uppercase tracking-widest text-sm"
+                      >
+                        <Database size={18} /> Visit Armory
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* --- DEFEAT SCREEN --- */}
+      {gameState.gamePhase === 'GAME_OVER' && (
+          <div className="absolute inset-0 bg-red-950/80 backdrop-blur-2xl flex flex-col items-center justify-center z-[100] pointer-events-auto p-4 animate-in fade-in duration-500">
+              <div className="max-w-md w-full flex flex-col items-center gap-6 text-center animate-in zoom-in-95 duration-300">
+                  <div className="bg-red-500/20 p-6 rounded-full border-4 border-red-500/50 mb-4 animate-pulse">
+                      <AlertCircle size={64} className="text-red-500" />
+                  </div>
+                  <h1 className="text-6xl font-black text-white uppercase tracking-tighter">System Failure</h1>
+                  <p className="text-red-400 font-mono text-sm tracking-widest uppercase">The core has been compromised</p>
+                  
+                  <div className="w-full bg-slate-900/50 border border-red-900/30 rounded-2xl p-6 mt-4">
+                      <div className="text-xs font-bold text-slate-500 uppercase tracking-[0.2em] mb-4">Mission Statistics</div>
+                      <div className="flex justify-between items-center text-sm font-bold uppercase text-slate-400 mb-2">
+                          <span>Wave Reached</span>
+                          <span className="text-white">{gameState.wave} / {totalWaves}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-sm font-bold uppercase text-slate-400">
+                          <span>Targets Destroyed</span>
+                          <span className="text-white">{gameState.stats.enemiesKilled}</span>
+                      </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3 w-full mt-8">
+                      <button 
+                        onClick={onReset} 
+                        className="bg-red-600 hover:bg-red-500 text-white font-black py-4 rounded-xl shadow-xl shadow-red-600/30 transition-all hover:scale-[1.02] flex items-center justify-center gap-2 uppercase tracking-widest"
+                      >
+                        <RefreshCcw size={20} /> Re-Initiate Simulation
+                      </button>
+                      <button 
+                        onClick={onGoToStageSelect} 
+                        className="bg-slate-900 hover:bg-slate-800 text-slate-400 font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 uppercase tracking-widest text-sm border border-slate-800"
+                      >
+                        <Home size={18} /> Return to Command
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* --- MAIN HUD --- */}
       {isPlaying && (
         <>
             <BossHealthBar gameState={gameState} />
             <AbilityHotbar gameState={gameState} onBatchTrigger={onBatchTrigger} />
 
-            {/* Top Left: Resources & Active Augments */}
+            {/* Resources HUD */}
             <div className="absolute top-4 left-4 md:top-6 md:left-6 flex flex-col gap-3 pointer-events-auto">
                 <div className="bg-slate-900/80 backdrop-blur-md border border-slate-700/50 p-3 rounded-xl flex items-center gap-4 shadow-xl shadow-black/20">
                     <div className="flex items-center gap-2">
@@ -400,19 +541,9 @@ const HUD: React.FC<HUDProps> = ({
                         <span className="text-2xl font-black tracking-tight text-white">{Math.floor(gameState.lives)}</span>
                     </div>
                 </div>
-
-                {gameState.activeAugments.length > 0 && (
-                <div className="flex flex-wrap gap-2 max-w-[200px]">
-                    {gameState.activeAugments.map((aug, i) => (
-                        <div key={aug.id + i} className={`p-1.5 rounded-lg border bg-slate-900/80 backdrop-blur border-slate-700/50 flex items-center justify-center group relative`} title={aug.name}>
-                        <Cpu size={14} className={aug.rarity === 'LEGENDARY' ? 'text-amber-400' : aug.rarity === 'RARE' ? 'text-blue-400' : 'text-slate-400'} />
-                        </div>
-                    ))}
-                </div>
-                )}
             </div>
 
-            {/* Top Center: Game Speed Controls */}
+            {/* Speed Controls */}
             <div className="absolute top-4 left-1/2 -translate-x-1/2 md:top-6 pointer-events-auto">
                 <div className="bg-slate-900/80 backdrop-blur-md border border-slate-700/50 p-1.5 rounded-xl flex items-center gap-1 shadow-xl">
                     <button onClick={() => onSetSpeed(0)} className={`p-2 rounded-lg transition-all ${gameState.gameSpeed === 0 ? 'bg-red-500/20 text-red-400' : 'hover:bg-slate-800 text-slate-400'}`}><Pause size={20} fill={gameState.gameSpeed === 0 ? "currentColor" : "none"} /></button>
@@ -421,7 +552,7 @@ const HUD: React.FC<HUDProps> = ({
                 </div>
             </div>
 
-            {/* Top Right: Wave Info */}
+            {/* Wave HUD */}
             <div className="absolute top-4 right-4 md:top-6 md:right-6 flex gap-3 pointer-events-auto">
                 <div className="bg-slate-900/80 backdrop-blur-md border border-slate-700/50 px-5 py-3 rounded-xl shadow-xl shadow-black/20 flex items-center gap-3">
                     <Swords className="text-blue-400" size={20} />
@@ -430,8 +561,61 @@ const HUD: React.FC<HUDProps> = ({
                         <span className="text-2xl font-black text-white">{gameState.wave} <span className="text-slate-500 text-lg">/ {totalWaves}</span></span>
                     </div>
                 </div>
-                <button onClick={onReset} className="bg-slate-900/80 backdrop-blur-md border border-slate-700/50 w-14 rounded-xl flex items-center justify-center hover:bg-slate-800 hover:text-white text-slate-400 transition-all shadow-xl shadow-black/20 active:scale-95" title="Restart Game"><RefreshCcw size={20} /></button>
+                <button onClick={() => setTutorialStep?.(1)} className="bg-slate-900/80 backdrop-blur-md border border-slate-700/50 w-14 rounded-xl flex items-center justify-center hover:bg-slate-800 hover:text-white text-slate-400 transition-all shadow-xl shadow-black/20 active:scale-95" title="Tutorial"><HelpCircle size={20} /></button>
             </div>
+
+            {/* Augment Selection Overlay */}
+            {gameState.isChoosingAugment && (
+                <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-xl flex flex-col items-center justify-center z-[100] pointer-events-auto p-4">
+                    <div className="mb-12 text-center animate-in slide-in-from-top-4 duration-500">
+                        <h2 className="text-4xl font-black text-white uppercase tracking-tighter mb-2">Tactical Upgrade Selection</h2>
+                        <p className="text-slate-400 font-mono text-sm uppercase tracking-widest">WAVE {gameState.wave} COMPLETED // CHOOSE ONE ENHANCEMENT</p>
+                    </div>
+                    <div className="flex flex-wrap justify-center gap-6 max-w-6xl w-full">
+                        {gameState.augmentChoices.map((aug, idx) => {
+                            if (!aug) return null;
+                            return (
+                                <button
+                                    key={aug.id + idx}
+                                    onClick={() => onPickAugment(aug)}
+                                    className={`
+                                        relative w-full max-w-[320px] aspect-[2/3] rounded-3xl border-2 p-8 transition-all duration-300 hover:scale-[1.05] flex flex-col group
+                                        ${aug.rarity === 'LEGENDARY' ? 'bg-amber-950/20 border-amber-500/50 hover:border-amber-400' : 
+                                        aug.rarity === 'RARE' ? 'bg-blue-950/20 border-blue-500/50 hover:border-blue-400' : 
+                                        'bg-slate-900 border-slate-700 hover:border-slate-500'}
+                                    `}
+                                >
+                                    <div className={`absolute top-4 right-4 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest border
+                                        ${aug.rarity === 'LEGENDARY' ? 'bg-amber-500 text-black border-amber-400' : 
+                                        aug.rarity === 'RARE' ? 'bg-blue-500 text-white border-blue-400' : 
+                                        'bg-slate-800 text-slate-400 border-slate-700'}
+                                    `}>
+                                        {aug.rarity}
+                                    </div>
+                                    <div className="mt-8 flex flex-col items-center flex-grow text-center">
+                                        <div className={`p-4 rounded-2xl mb-6 shadow-2xl
+                                            ${aug.rarity === 'LEGENDARY' ? 'bg-amber-500/20 text-amber-500' : 
+                                            aug.rarity === 'RARE' ? 'bg-blue-500/20 text-blue-500' : 
+                                            'bg-slate-800 text-slate-400'}
+                                        `}>
+                                            <Cpu size={48} />
+                                        </div>
+                                        <h3 className="text-2xl font-black text-white uppercase mb-4 leading-tight">{aug.name}</h3>
+                                        <p className="text-slate-400 text-sm leading-relaxed">{aug.description}</p>
+                                    </div>
+                                    <div className={`mt-auto w-full py-4 rounded-xl font-black text-sm uppercase transition-all
+                                        ${aug.rarity === 'LEGENDARY' ? 'bg-amber-600 group-hover:bg-amber-500 text-white' : 
+                                        aug.rarity === 'RARE' ? 'bg-blue-600 group-hover:bg-blue-500 text-white' : 
+                                        'bg-slate-800 group-hover:bg-slate-700 text-slate-200'}
+                                    `}>
+                                        Install Upgrade
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
 
             {/* CONFIRMATION OVERLAY */}
             {pendingPlacement && (
@@ -445,8 +629,8 @@ const HUD: React.FC<HUDProps> = ({
                     </div>
                 </div>
             )}
-            
-            {/* TARGETING OVERLAY */}
+
+            {/* Targeted Ability Controls */}
             {gameState.targetingAbility && (
                 <div className="absolute bottom-32 left-1/2 -translate-x-1/2 pointer-events-auto animate-in slide-in-from-bottom-4 zoom-in-95 duration-200">
                     <div className="bg-purple-900/90 backdrop-blur-md border border-purple-500 p-4 rounded-2xl shadow-2xl flex items-center gap-4">
@@ -459,7 +643,7 @@ const HUD: React.FC<HUDProps> = ({
                 </div>
             )}
 
-            {/* Bottom Center: Shop/Upgrade */}
+            {/* Tower Stats / Upgrade Panel */}
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto w-full md:w-auto flex justify-center px-4">
                 {selectedTower && baseStats ? (
                 <div className="bg-slate-950/95 backdrop-blur-xl border border-blue-500/30 p-5 rounded-2xl flex flex-col gap-4 shadow-2xl shadow-blue-900/20 max-w-[95vw] md:max-w-4xl animate-in slide-in-from-bottom-4 duration-300">
@@ -488,17 +672,14 @@ const HUD: React.FC<HUDProps> = ({
                                         const info = TECH_PATH_INFO[path];
                                         const cost = UPGRADE_CONFIG.costs[2];
                                         const canAfford = gameState.gold >= cost;
-                                        // Get Level 3 Ability preview
                                         const abilityPreview = ABILITY_MATRIX[selectedTower.type][path];
-
                                         return (
                                             <div key={path} className={`flex-1 flex flex-col p-4 rounded-xl border-2 transition-all relative overflow-hidden group ${canAfford ? 'border-slate-800 hover:border-blue-500/50 bg-slate-900 hover:bg-slate-800' : 'border-slate-800 bg-slate-900 opacity-60'}`}>
                                                 <div className="flex items-center gap-3 mb-3">
-                                                <div className="p-2 rounded-lg" style={{ backgroundColor: `${info.color}20`, color: info.color }}>{info.icon === 'Swords' && <Swords size={20} />}{info.icon === 'Zap' && <Zap size={20} />}{info.icon === 'Eye' && <Eye size={20} />}</div>
-                                                <div><div className="font-bold text-white text-sm uppercase tracking-wider">{info.name}</div><div className="text-[10px] text-slate-400 font-mono">Tech Path</div></div>
+                                                    <div className="p-2 rounded-lg" style={{ backgroundColor: `${info.color}20`, color: info.color }}>{info.icon === 'Swords' && <Swords size={20} />}{info.icon === 'Zap' && <Zap size={20} />}{info.icon === 'Eye' && <Eye size={20} />}</div>
+                                                    <div><div className="font-bold text-white text-sm uppercase tracking-wider">{info.name}</div><div className="text-[10px] text-slate-400 font-mono">Tech Path</div></div>
                                                 </div>
                                                 <p className="text-xs text-slate-400 mb-4 h-8 leading-tight">{info.description}</p>
-                                                
                                                 <div className="space-y-2 mb-4 text-xs">
                                                     <div className="font-bold text-slate-300">Level 2: <span className="text-slate-400 font-normal">{info.passiveDesc}</span></div>
                                                     {abilityPreview && (
@@ -508,7 +689,6 @@ const HUD: React.FC<HUDProps> = ({
                                                         </div>
                                                     )}
                                                 </div>
-                                                
                                                 <div className="mt-auto pt-2"><button onClick={() => canAfford && onUpgradeTower(selectedTower.id, path)} disabled={!canAfford} className={`w-full py-3 rounded-lg font-bold text-sm flex items-center justify-center gap-2 transition-all ${canAfford ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}><Coins size={14} className={canAfford ? 'text-yellow-300' : 'text-slate-500'} />{cost} INSTALL</button></div>
                                             </div>
                                         );
@@ -533,8 +713,7 @@ const HUD: React.FC<HUDProps> = ({
                                 </div>
                             )}
                         </div>
-                        {/* Target Priority Panel Omitted for brevity, kept same */}
-                         <div className="flex flex-col gap-2 min-w-[200px]">
+                        <div className="flex flex-col gap-2 min-w-[200px]">
                             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-2"><Target size={12} /> Target Priority</div>
                             <div className="flex flex-col gap-2 bg-slate-900 p-2 rounded-xl border border-slate-800">
                                 {[TargetPriority.FIRST, TargetPriority.STRONGEST, TargetPriority.WEAKEST].map(priority => (<button key={priority} onClick={() => onUpdatePriority(selectedTower.id, priority)} className={`px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wide text-left transition-all border ${selectedTower.targetPriority === priority ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700 hover:text-white'}`}>{priority}</button>))}
@@ -544,26 +723,27 @@ const HUD: React.FC<HUDProps> = ({
                 </div>
                 ) : (
                 <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-700/50 p-2 rounded-2xl flex gap-2 shadow-2xl shadow-black/50 overflow-x-auto max-w-full">
-                {Object.entries(TOWER_STATS).map(([type, stats]) => {
-                    const discountCost = getTowerCost(stats.cost);
-                    return (
-                        <button key={type} onClick={() => onSelectTower(type as TowerType)} className={`group relative min-w-[80px] p-3 rounded-xl flex flex-col items-center gap-2 transition-all duration-200 ${selectedTowerType === type && !pendingPlacement && !gameState.targetingAbility ? 'bg-slate-800 border-2 border-blue-500' : 'bg-transparent border-2 border-transparent hover:bg-slate-800/50'} ${gameState.gold < discountCost ? 'opacity-40 grayscale' : ''}`}>
-                        <div className="w-8 h-8 rounded-full shadow-lg transition-transform group-hover:scale-110" style={{ backgroundColor: stats.color }} />
-                        <div className="flex flex-col items-center"><span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">{type}</span><div className="flex items-center gap-1 text-yellow-400 text-xs font-black bg-slate-950/50 px-2 py-0.5 rounded-full mt-1"><Coins size={10} />{discountCost}</div></div>
-                        </button>
-                    )
-                })}
+                    {Object.entries(TOWER_STATS).map(([type, stats]) => {
+                        const discountCost = getTowerCost(stats.cost);
+                        const desc = type === TowerType.BASIC ? "Standard hitscan unit. Balanced and reliable." :
+                                     type === TowerType.SNIPER ? "Extreme range and high single-target damage." :
+                                     type === TowerType.FAST ? "Rapid fire low damage unit. Great against swarms." :
+                                     "Heavy area damage. Ignores enemy armor plating.";
+                        return (
+                            <Tooltip key={type} text={desc}>
+                                <button onClick={() => onSelectTower(type as TowerType)} className={`group relative min-w-[80px] p-3 rounded-xl flex flex-col items-center gap-2 transition-all duration-200 ${selectedTowerType === type && !pendingPlacement && !gameState.targetingAbility ? 'bg-slate-800 border-2 border-blue-500' : 'bg-transparent border-2 border-transparent hover:bg-slate-800/50'} ${gameState.gold < discountCost ? 'opacity-40 grayscale' : ''}`}>
+                                    <div className="w-8 h-8 rounded-full shadow-lg transition-transform group-hover:scale-110" style={{ backgroundColor: stats.color }} />
+                                    <div className="flex flex-col items-center"><span className="text-[10px] font-bold uppercase tracking-wider text-slate-300">{type}</span><div className="flex items-center gap-1 text-yellow-400 text-xs font-black bg-slate-950/50 px-2 py-0.5 rounded-full mt-1"><Coins size={10} />{discountCost}</div></div>
+                                </button>
+                            </Tooltip>
+                        )
+                    })}
                 </div>
                 )}
             </div>
 
-            {/* Bottom Right: Action Button */}
+            {/* Action Button */}
             <div className="absolute bottom-4 right-4 md:bottom-6 md:right-6 pointer-events-auto flex flex-col gap-2 items-end">
-                {gameState.wave > totalWaves - 2 && gameState.wave < totalWaves && gameState.waveStatus === 'IDLE' && (
-                    <div className="bg-red-900/80 text-white px-3 py-1 rounded text-[10px] font-bold uppercase tracking-wider animate-pulse border border-red-500">
-                        Boss Incoming
-                    </div>
-                )}
                 <button 
                     onClick={onStartWave}
                     disabled={gameState.waveStatus !== 'IDLE' || gameState.isChoosingAugment}
@@ -574,7 +754,6 @@ const HUD: React.FC<HUDProps> = ({
                             : 'bg-slate-800 border-slate-700 grayscale cursor-not-allowed opacity-80'}
                     `}
                 >
-                    <div className="absolute inset-0 rounded-full border-2 border-white/20 scale-90 group-hover:scale-100 transition-transform" />
                     {gameState.waveStatus === 'IDLE' && !gameState.isChoosingAugment ? (
                          <Play size={32} fill="currentColor" className="text-white ml-1" /> 
                     ) : (

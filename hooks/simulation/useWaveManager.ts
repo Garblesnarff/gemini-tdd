@@ -15,14 +15,14 @@ export function manageWaveState(enemies: Enemy[], waveStatus: string, lives: num
     events.push({ type: 'WAVE_COMPLETE', waveNumber: ctx.state.wave });
     
     // 1. Augment Interest
-    const interestAug = ctx.activeAugments.find(a => a.effect && a.effect.special === 'INTEREST');
+    const interestAug = ctx.activeAugments.find(a => a && a.effect && a.effect.special === 'INTEREST');
     let augInterest = 0;
     if (interestAug && interestAug.effect) {
         augInterest = (interestAug.effect.value || 0.1);
     }
     
     // 2. Meta Interest
-    const metaInterest = ctx.metaEffects.interestRate;
+    const metaInterest = ctx.metaEffects.interestRate || 0;
     const totalInterest = augInterest + metaInterest;
 
     if (totalInterest > 0) {
@@ -39,7 +39,6 @@ export function manageWaveState(enemies: Enemy[], waveStatus: string, lives: num
     }
 
     // AI Director Evaluation
-    // First, update wave stats for the end of the wave
     const isClean = ctx.state.waveStats.livesLostThisWave === 0;
     const nextCleanStreak = isClean ? ctx.state.waveStats.consecutiveCleanWaves + 1 : 0;
     
@@ -60,7 +59,7 @@ export function manageWaveState(enemies: Enemy[], waveStatus: string, lives: num
         ...changes,
         lives: nextLives,
         waveStats: {
-            livesLostThisWave: 0, // Reset for next wave
+            livesLostThisWave: 0,
             waveStartTime: 0,
             waveEndTime: 0,
             consecutiveCleanWaves: nextCleanStreak

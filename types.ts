@@ -322,6 +322,7 @@ export interface MetaProgress {
   achievements: Record<string, boolean>; // id -> unlocked
   achievementProgress: AchievementProgress;
   stats: MetaStats;
+  hasSeenTutorial: boolean; // New
 }
 
 // --- META UPGRADES TYPES ---
@@ -530,4 +531,7 @@ export interface GameState {
   
   achievementToastQueue: { achievement: Achievement; timestamp: number }[];
   pendingAchievementEvents: AchievementEvent[]; // Queue for events outside game loop
+
+  // Tutorial
+  tutorialStep: number | null; // New
 }

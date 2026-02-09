@@ -81,7 +81,8 @@ const App: React.FC = () => {
     directorGoldBonus: 1,
     directorCooldownMult: 1,
     achievementToastQueue: [],
-    pendingAchievementEvents: []
+    pendingAchievementEvents: [],
+    tutorialStep: null
   });
 
   const [selectedTowerType, setSelectedTowerType] = useState<TowerType>(TowerType.BASIC);
@@ -94,8 +95,24 @@ const App: React.FC = () => {
 
   // Initial Load Check
   useEffect(() => {
-    setCanContinue(hasSaveData());
+    const loaded = loadGame();
+    if (loaded) {
+        setCanContinue(true);
+        setGameState(prev => ({
+            ...prev,
+            stageProgress: loaded.stageProgress,
+            metaProgress: loaded.metaProgress,
+            metaEffects: getAppliedMetaEffects(loaded.metaProgress)
+        }));
+    }
   }, []);
+
+  // Tutorial Trigger Logic
+  useEffect(() => {
+    if (gameState.gamePhase === 'PLAYING' && !gameState.metaProgress.hasSeenTutorial && gameState.tutorialStep === null) {
+        setGameState(prev => ({ ...prev, tutorialStep: 1 }));
+    }
+  }, [gameState.gamePhase, gameState.metaProgress.hasSeenTutorial]);
 
   // Boss Announcement Clearer
   useEffect(() => {
@@ -358,9 +375,11 @@ const App: React.FC = () => {
         setGameState(prev => {
             const pool = [...AUGMENT_POOL];
             const choices: Augment[] = [];
-            for(let k=0; k<3; k++) {
+            const count = Math.min(3, pool.length);
+            for(let k=0; k<count; k++) {
                 const idx = Math.floor(Math.random() * pool.length);
-                choices.push(pool.splice(idx, 1)[0]);
+                const picked = pool.splice(idx, 1)[0];
+                if (picked) choices.push(picked);
             }
             return {
                 ...prev,
@@ -791,14 +810,15 @@ const App: React.FC = () => {
                 const tower = prev.towers.find(t => t.id === id);
                 if (!tower) return prev;
                 // @ts-ignore
-                const cost = UPGRADE_CONFIG.costs[tower.level + 1];
+                const nextLvl = tower.level + 1;
+                const cost = UPGRADE_CONFIG.costs[nextLvl];
                 if (prev.gold < cost) return prev;
 
-                const config = UPGRADE_CONFIG.paths[path]?.[tower.level + 1];
+                const config = UPGRADE_CONFIG.paths[path]?.[nextLvl];
                 if (!config) return prev;
                 
                 let activeType = tower.activeType;
-                if (tower.level + 1 === 3) {
+                if (nextLvl === 3) {
                     const abilityConfig = ABILITY_MATRIX[tower.type][path];
                     if (abilityConfig) activeType = abilityConfig.id as ActiveAbilityType;
                 }
@@ -807,7 +827,7 @@ const App: React.FC = () => {
                     if (t.id === id) {
                         return {
                             ...t,
-                            level: t.level + 1,
+                            level: nextLvl,
                             techPath: path,
                             damage: config.damage ? t.baseDamage * config.damage : t.damage,
                             range: config.range ? t.baseRange * config.range : t.range,
@@ -825,7 +845,7 @@ const App: React.FC = () => {
                     towers,
                     pendingAchievementEvents: [
                         ...prev.pendingAchievementEvents,
-                        { type: 'TOWER_UPGRADED', towerId: id, towerType: tower.type, newLevel: tower.level + 1, techPath: path }
+                        { type: 'TOWER_UPGRADED', towerId: id, towerType: tower.type, newLevel: nextLvl, techPath: path }
                     ]
                 };
             });
@@ -853,7 +873,10 @@ const App: React.FC = () => {
         onTriggerAbility={handleSingleTrigger}
         pendingPlacement={pendingPlacement}
         onConfirmPlacement={handleConfirmPlacement}
-        onCancelPlacement={() => setPendingPlacement(null)}
+        onCancelPlacement={() => {
+            setPendingPlacement(null);
+            setGameState(p => ({ ...p, targetingAbility: null }));
+        }}
         onUpdatePriority={(id, priority) => {
             setGameState(prev => ({
                 ...prev,
@@ -861,14 +884,20 @@ const App: React.FC = () => {
             }));
         }}
         onPickAugment={(aug) => {
-             setGameState(prev => ({
-                 ...prev,
-                 activeAugments: [...prev.activeAugments, aug],
-                 augmentChoices: [],
-                 isChoosingAugment: false,
-                 waveStatus: 'IDLE' // Redundant but safe
-             }));
-             // Trigger actual spawning for current wave number
+             setGameState(prev => {
+                const nextState = {
+                    ...prev,
+                    activeAugments: [...prev.activeAugments, aug],
+                    augmentChoices: [],
+                    isChoosingAugment: false,
+                    waveStatus: 'SPAWNING' as const // Flow improvement: Proceed to spawn after picking
+                };
+                
+                // Immediately calculate and start spawning since we are now in the correct state
+                return nextState;
+             });
+             
+             // Fire-and-forget trigger for actual unit generation
              triggerSpawning(gameState.wave, gameState.currentStage, gameState.directorState);
         }}
         onBatchTrigger={handleBatchTrigger}
@@ -896,12 +925,19 @@ const App: React.FC = () => {
                 metaProgress: INITIAL_META_PROGRESS,
                 metaEffects: getAppliedMetaEffects(INITIAL_META_PROGRESS),
                 gamePhase: 'STAGE_SELECT',
-                pendingAchievementEvents: []
+                pendingAchievementEvents: [],
+                tutorialStep: null
             }));
         }}
         totalWaves={STAGE_CONFIGS[gameState.currentStage].waves}
         onOpenShop={() => setGameState(p => ({ ...p, gamePhase: 'SHOP' }))}
         onOpenAchievements={() => setShowAchievements(true)}
+        setTutorialStep={(step) => setGameState(p => ({ ...p, tutorialStep: step }))}
+        finishTutorial={() => setGameState(prev => {
+            const nextMeta = { ...prev.metaProgress, hasSeenTutorial: true };
+            saveGame(prev.stageProgress, nextMeta);
+            return { ...prev, metaProgress: nextMeta, tutorialStep: null };
+        })}
       />
     </>
   );

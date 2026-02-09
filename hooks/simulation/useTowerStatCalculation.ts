@@ -1,4 +1,3 @@
-
 import { Tower, Augment, PassiveType, TowerType, ActiveAbilityType } from '../../types';
 import { SimulationContext } from './types';
 import { PASSIVE_CONFIG, ABILITY_MATRIX } from '../../constants';
@@ -51,13 +50,13 @@ export function calculateTowerStats(towers: Tower[], augments: Augment[], ctx: S
     
     // --- META UPGRADE APPLICATION (Base Stats) ---
     if (ctx.metaEffects) {
-        nextTower.damage *= ctx.metaEffects.globalDamageMultiplier;
-        nextTower.range *= ctx.metaEffects.globalRangeMultiplier;
+        nextTower.damage *= (ctx.metaEffects.globalDamageMultiplier || 1);
+        nextTower.range *= (ctx.metaEffects.globalRangeMultiplier || 1);
     }
 
     // Apply Passive Auras from nearby towers
     towers.forEach(other => {
-      if (other.id === tower.id || (other.disabledTimer && other.disabledTimer > 0)) return;
+      if (!other || other.id === tower.id || (other.disabledTimer && other.disabledTimer > 0)) return;
       
       const dist = getDistance2D(tower.position, other.position);
       
@@ -93,7 +92,7 @@ export function calculateTowerStats(towers: Tower[], augments: Augment[], ctx: S
     }
 
     // Apply Global Augments
-    if (augments) {
+    if (augments && Array.isArray(augments)) {
         augments.forEach(aug => {
           if (!aug || !aug.effect) return;
           const e = aug.effect;

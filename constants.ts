@@ -332,7 +332,8 @@ export const INITIAL_META_PROGRESS: MetaProgress = {
     totalGoldEarned: 0,
     totalBossesDefeated: 0,
     totalPlayTime: 0
-  }
+  },
+  hasSeenTutorial: false // New
 };
 
 export const STAGE_CORE_REWARDS: Record<StageId, { firstClear: number, replay: number }> = {
@@ -420,7 +421,7 @@ export const getWaveDefinition = (stageId: StageId, waveNumber: number): WaveDef
              groups.push(grp(EnemyType.BASIC, c(10), p1, 500));
              groups.push(grp(EnemyType.HEALER, c(2), p1 + 2000, 3000));
              groups.push(grp(EnemyType.SHIELDED, c(3), 4000, 2000));
-             intel = "Enemy medics identified. Prioritize healer units.";
+             intel = "Enemy medics identified. Prioritize healer elimination.";
         } else if (waveNumber === 14) {
              // STAGE 2+ Introduce PHASER
              if (stageId >= StageId.STAGE_2) {
@@ -777,7 +778,7 @@ export const ABILITY_MATRIX: Record<TowerType, Record<TechPath, AbilityConfig | 
     }
 };
 
-// Helper to access aura configs which were previously in ABILITY_CONFIG
+// Helper to access aura configs which were previously in ABILITY_MATRIX
 export const PASSIVE_CONFIG = {
   [PassiveType.DAMAGE_AURA]: { range: 2.5, multiplier: 1.25 }, 
   [PassiveType.RATE_AURA]: { range: 2.5, multiplier: 1.25 },   
