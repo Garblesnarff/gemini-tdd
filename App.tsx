@@ -787,6 +787,7 @@ const App: React.FC = () => {
       {gameState.gamePhase === 'SHOP' && (
           <MetaShop 
               metaProgress={gameState.metaProgress} 
+              stageProgress={gameState.stageProgress}
               onPurchase={handleBuyMetaUpgrade}
               onBack={() => setGameState(p => ({ ...p, gamePhase: 'STAGE_SELECT' }))}
           />
